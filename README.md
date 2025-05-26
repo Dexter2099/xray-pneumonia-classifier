@@ -42,3 +42,11 @@ The resulting heatmap is stored in `outputs/visualizations/`.
 
 ---
 Created as a beginner-friendly yet medically relevant deep learning project.
+
+## Web App
+You can launch a simple Streamlit interface to test the model on your own images:
+
+```bash
+pip install -r requirements.txt
+streamlit run app.py
+```
