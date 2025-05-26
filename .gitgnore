@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.pth
+.DS_Store
+.vscode/
+.env/
+outputs/checkpoints/*.pth
+outputs/visualizations/*.png
+data/

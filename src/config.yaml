@@ -1,0 +1,27 @@
+# Paths
+data_dir: data/raw/chest_xray
+processed_dir: data/processed
+output_dir: outputs
+checkpoint_dir: outputs/checkpoints
+visualizations_dir: outputs/visualizations
+
+# Dataset
+image_size: 224
+batch_size: 32
+num_workers: 4
+
+# Model
+model_name: simple_cnn
+pretrained: false
+
+# Training
+epochs: 10
+learning_rate: 0.001
+weight_decay: 0.0001
+optimizer: adam
+
+# Evaluation
+threshold: 0.5
+
+# Misc
+seed: 42
