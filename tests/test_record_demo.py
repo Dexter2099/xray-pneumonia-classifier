@@ -9,7 +9,7 @@ def test_demo_recorder_paths_and_viewport_are_portfolio_ready():
     assert record_demo.VIEWPORT == {"width": 1440, "height": 900}
 
 
-def test_find_demo_samples_requires_normal_and_pneumonia_images(tmp_path):
+def test_find_demo_samples_requires_metadata_file(tmp_path):
     sample_dir = tmp_path / "demo-assets" / "sample-xrays"
     sample_dir.mkdir(parents=True)
 
@@ -20,22 +20,67 @@ def test_find_demo_samples_requires_normal_and_pneumonia_images(tmp_path):
     else:
         raise AssertionError("Expected missing sample images to fail clearly")
 
-    assert str(sample_dir) in message
-    assert "NORMAL" in message
-    assert "PNEUMONIA" in message
+    assert str(sample_dir / "demo_samples.json") in message
+    assert "python scripts/select_demo_samples.py" in message
 
 
-def test_find_demo_samples_accepts_labelled_images(tmp_path):
+def test_find_demo_samples_requires_three_case_metadata(tmp_path):
     sample_dir = tmp_path / "demo-assets" / "sample-xrays"
     sample_dir.mkdir(parents=True)
-    normal = sample_dir / "normal-example.jpeg"
-    pneumonia = sample_dir / "pneumonia-example.jpeg"
-    normal.write_bytes(b"normal")
-    pneumonia.write_bytes(b"pneumonia")
+    (sample_dir / "demo_samples.json").write_text(
+        """
+        [
+          {"case_id": "confirmed_pneumonia", "filename": "pneumonia-confirmed.jpeg"},
+          {"case_id": "normal", "filename": "normal-example.jpeg"}
+        ]
+        """,
+        encoding="utf-8",
+    )
+
+    try:
+        record_demo.find_demo_samples(sample_dir)
+    except RuntimeError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("Expected missing demo_samples.json to fail clearly")
+
+    assert "python scripts/select_demo_samples.py" in message
+    assert "borderline" in message
+
+
+def test_find_demo_samples_accepts_metadata_cases(tmp_path):
+    sample_dir = tmp_path / "demo-assets" / "sample-xrays"
+    sample_dir.mkdir(parents=True)
+    filenames = {
+        "confirmed_pneumonia": "pneumonia-confirmed.jpeg",
+        "normal": "normal-example.jpeg",
+        "borderline": "borderline-pneumonia.jpeg",
+    }
+    for filename in filenames.values():
+        (sample_dir / filename).write_bytes(b"image")
+    (sample_dir / "demo_samples.json").write_text(
+        """
+        [
+          {"case_id": "confirmed_pneumonia", "filename": "pneumonia-confirmed.jpeg"},
+          {"case_id": "normal", "filename": "normal-example.jpeg"},
+          {"case_id": "borderline", "filename": "borderline-pneumonia.jpeg"}
+        ]
+        """,
+        encoding="utf-8",
+    )
 
     samples = record_demo.find_demo_samples(sample_dir)
 
-    assert samples == {"NORMAL": normal, "PNEUMONIA": pneumonia}
+    assert [sample["case_id"] for sample in samples] == [
+        "confirmed_pneumonia",
+        "normal",
+        "borderline",
+    ]
+    assert [sample["path"] for sample in samples] == [
+        sample_dir / filenames["confirmed_pneumonia"],
+        sample_dir / filenames["normal"],
+        sample_dir / filenames["borderline"],
+    ]
 
 
 def test_build_ffmpeg_command_targets_final_mp4():

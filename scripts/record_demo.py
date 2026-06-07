@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import shutil
@@ -17,10 +18,17 @@ OUTPUT_DIR = ROOT / "demo-output"
 OUTPUT_PATH = OUTPUT_DIR / "xray-classifier-demo.mp4"
 RAW_VIDEO_DIR = OUTPUT_DIR / "raw"
 SAMPLE_DIR = ROOT / "demo-assets" / "sample-xrays"
+METADATA_PATH = SAMPLE_DIR / "demo_samples.json"
 CHECKPOINT_PATH = ROOT / "outputs" / "checkpoints" / "best_model.pth"
 VIEWPORT = {"width": 1440, "height": 900}
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg"}
 MODEL_EXPLANATION_HEADING = "Model explanation"
+REQUIRED_CASE_IDS = ["confirmed_pneumonia", "normal", "borderline"]
+CASE_BUTTONS = {
+    "confirmed_pneumonia": "Confirmed pneumonia",
+    "normal": "Normal X-ray",
+    "borderline": "Borderline case",
+}
 
 
 def find_free_port() -> int:
@@ -29,26 +37,29 @@ def find_free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def find_demo_samples(sample_dir: Path = SAMPLE_DIR) -> dict[str, Path]:
-    samples: dict[str, Path] = {}
-    if sample_dir.exists():
-        for path in sorted(sample_dir.rglob("*")):
-            if not path.is_file() or path.suffix.lower() not in IMAGE_SUFFIXES:
-                continue
-            label_text = str(path.relative_to(sample_dir)).upper()
-            if "NORMAL" in label_text and "NORMAL" not in samples:
-                samples["NORMAL"] = path
-            elif "PNEUMONIA" in label_text and "PNEUMONIA" not in samples:
-                samples["PNEUMONIA"] = path
+def find_demo_samples(sample_dir: Path = SAMPLE_DIR) -> list[dict]:
+    metadata_path = sample_dir / "demo_samples.json"
+    rerun_message = "Run `python scripts/select_demo_samples.py` before recording."
+    if not metadata_path.exists():
+        raise RuntimeError(f"Missing {metadata_path}. {rerun_message}")
 
-    missing = [label for label in ("NORMAL", "PNEUMONIA") if label not in samples]
+    samples = json.loads(metadata_path.read_text(encoding="utf-8"))
+    by_case = {sample.get("case_id"): sample for sample in samples}
+    missing = [case_id for case_id in REQUIRED_CASE_IDS if case_id not in by_case]
     if missing:
         raise RuntimeError(
-            "Missing demo sample image(s) for "
-            f"{', '.join(missing)} in {sample_dir}. "
-            "Add .png, .jpg, or .jpeg files with NORMAL and PNEUMONIA in the filename or parent folder."
+            f"Missing demo metadata case(s): {', '.join(missing)}. {rerun_message}"
         )
-    return samples
+    ordered = []
+    for case_id in REQUIRED_CASE_IDS:
+        sample = by_case[case_id]
+        path = sample_dir / sample["filename"]
+        if not path.exists():
+            raise RuntimeError(f"Missing demo sample image: {path}. {rerun_message}")
+        sample = dict(sample)
+        sample["path"] = path
+        ordered.append(sample)
+    return ordered
 
 
 def validate_demo_inputs() -> None:
@@ -149,7 +160,7 @@ def convert_to_mp4(raw_video_path: Path, output_path: Path) -> None:
     subprocess.run(command, cwd=ROOT, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def scroll_to_model_explanation(page) -> None:
+def scroll_to_model_explanation(page, pause_ms: int = 5_000) -> None:
     heading = page.get_by_role("heading", name=MODEL_EXPLANATION_HEADING)
     heading.wait_for(timeout=15_000)
     heading.scroll_into_view_if_needed(timeout=10_000)
@@ -177,7 +188,16 @@ def scroll_to_model_explanation(page) -> None:
         """,
         MODEL_EXPLANATION_HEADING,
     )
-    page.wait_for_timeout(4_500)
+    page.wait_for_timeout(pause_ms)
+
+
+def run_case(page, case_id: str) -> None:
+    page.get_by_role("button", name=CASE_BUTTONS[case_id]).click()
+    page.wait_for_timeout(800)
+    page.get_by_role("button", name="Run prediction").click()
+    page.locator('[data-testid="stMetric"]').first.wait_for(timeout=45_000)
+    page.wait_for_timeout(3_500)
+    scroll_to_model_explanation(page)
 
 
 def run_demo_flow(base_url: str, video_dir: Path) -> Path:
@@ -201,13 +221,9 @@ def run_demo_flow(base_url: str, video_dir: Path) -> Path:
         page.get_by_text("Chest X-Ray Pneumonia Classifier").wait_for(timeout=15_000)
         page.wait_for_timeout(2_500)
 
-        page.get_by_role("button", name="Pneumonia example").click()
-        page.wait_for_timeout(1_000)
-        page.get_by_role("button", name="Run prediction").click()
-        page.locator('[data-testid="stMetric"]').first.wait_for(timeout=45_000)
-        page.wait_for_timeout(2_000)
+        for case_id in REQUIRED_CASE_IDS:
+            run_case(page, case_id)
 
-        scroll_to_model_explanation(page)
         evaluation_heading = page.get_by_text("Evaluation artifacts")
         if evaluation_heading.count() > 0:
             evaluation_heading.scroll_into_view_if_needed(timeout=10_000)

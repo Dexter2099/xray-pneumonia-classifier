@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 
@@ -9,6 +10,8 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parent
 SAMPLE_DIR = ROOT / "demo-assets" / "sample-xrays"
+DEMO_METADATA_PATH = SAMPLE_DIR / "demo_samples.json"
+GRADCAM_OUTPUT_DIR = ROOT / "demo-output" / "gradcam"
 CONFUSION_MATRIX_PATH = ROOT / "outputs" / "visualizations" / "confusion_matrix.png"
 METRICS_CANDIDATES = [
     ROOT / "outputs" / "visualizations" / "metrics.json",
@@ -23,18 +26,13 @@ def load_config(config_path=ROOT / "src" / "config.yaml"):
 
 
 def find_demo_samples(sample_dir=SAMPLE_DIR):
-    samples = {}
-    if not sample_dir.exists():
-        return samples
+    metadata_path = sample_dir / "demo_samples.json"
+    if not metadata_path.exists():
+        return []
 
-    for path in sorted(sample_dir.rglob("*")):
-        if not path.is_file() or path.suffix.lower() not in IMAGE_SUFFIXES:
-            continue
-        label_text = str(path.relative_to(sample_dir)).upper()
-        if "NORMAL" in label_text and "NORMAL" not in samples:
-            samples["NORMAL"] = path
-        elif "PNEUMONIA" in label_text and "PNEUMONIA" not in samples:
-            samples["PNEUMONIA"] = path
+    samples = json.loads(metadata_path.read_text(encoding="utf-8"))
+    for sample in samples:
+        sample["path"] = sample_dir / sample["filename"]
     return samples
 
 
@@ -53,10 +51,42 @@ def render_probability_bars(probabilities):
 
 def load_selected_image(uploaded_file, selected_sample):
     if uploaded_file is not None:
-        return Image.open(uploaded_file).convert("L"), "Uploaded image"
+        return Image.open(uploaded_file).convert("L"), "Uploaded image", None
     if selected_sample is not None:
-        return Image.open(selected_sample).convert("L"), selected_sample.name
-    return None, None
+        path = Path(selected_sample["path"])
+        return Image.open(path).convert("L"), selected_sample["case_title"], selected_sample
+    return None, None, None
+
+
+def selected_sample_from_state(samples):
+    selected_case_id = st.session_state.get("selected_case_id")
+    if selected_case_id is None and samples:
+        selected_case_id = samples[0]["case_id"]
+        st.session_state["selected_case_id"] = selected_case_id
+    for sample in samples:
+        if sample["case_id"] == selected_case_id:
+            return sample
+    return None
+
+
+def gradcam_cache_path(sample):
+    if sample is None:
+        return None
+    return GRADCAM_OUTPUT_DIR / f"{sample['case_id']}.png"
+
+
+def load_or_generate_gradcam(image, config, sample):
+    from src.gradcam import generate_gradcam_overlay
+
+    cache_path = gradcam_cache_path(sample)
+    if cache_path is not None and cache_path.exists():
+        return Image.open(cache_path).convert("RGB")
+
+    overlay = generate_gradcam_overlay(image, config)
+    if cache_path is not None:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        overlay.save(cache_path)
+    return overlay
 
 
 def main():
@@ -97,27 +127,29 @@ def main():
 
     with left:
         st.markdown("### Demo input")
-        st.caption("Use a local demo sample for the reel, or upload a chest X-ray image.")
+        st.caption("Use a selected real-model demo case, or upload a chest X-ray image.")
         uploaded_file = st.file_uploader("Upload X-ray Image", type=["png", "jpg", "jpeg"])
 
-        st.markdown("#### Built-in samples")
+        st.markdown("#### Demo cases")
         if samples:
-            sample_cols = st.columns(2)
-            if "NORMAL" in samples and sample_cols[0].button("Normal example", use_container_width=True):
-                st.session_state["selected_sample"] = str(samples["NORMAL"])
-            if "PNEUMONIA" in samples and sample_cols[1].button("Pneumonia example", use_container_width=True):
-                st.session_state["selected_sample"] = str(samples["PNEUMONIA"])
+            for sample in samples:
+                button_label = sample["case_title"]
+                if st.button(button_label, use_container_width=True):
+                    st.session_state["selected_case_id"] = sample["case_id"]
+                    st.session_state.pop("prediction", None)
+                    st.session_state.pop("gradcam_overlay", None)
+                    st.session_state.pop("gradcam_error", None)
         else:
             st.info(
-                "Add demo images under demo-assets/sample-xrays/. "
-                "Use filenames or subfolders containing NORMAL and PNEUMONIA."
+                "Run `python scripts/select_demo_samples.py` to create the three real-model demo cases."
             )
 
-        selected_sample = st.session_state.get("selected_sample")
+        selected_sample = selected_sample_from_state(samples)
         if selected_sample:
-            st.caption(f"Selected sample: {Path(selected_sample).name}")
+            st.caption(f"Selected case: {selected_sample['case_title']}")
+            st.caption(selected_sample["case_description"])
 
-    image, image_caption = load_selected_image(uploaded_file, Path(selected_sample) if selected_sample else None)
+    image, image_caption, selected_sample = load_selected_image(uploaded_file, selected_sample)
 
     with right:
         st.markdown("### Prediction workflow")
@@ -130,12 +162,11 @@ def main():
 
             with result_col:
                 if st.button("Run prediction", type="primary", use_container_width=True):
-                    from src.gradcam import generate_gradcam_overlay
                     from src.inference import predict_image
 
                     st.session_state["prediction"] = predict_image(image, config)
                     try:
-                        st.session_state["gradcam_overlay"] = generate_gradcam_overlay(image, config)
+                        st.session_state["gradcam_overlay"] = load_or_generate_gradcam(image, config, selected_sample)
                         st.session_state["gradcam_error"] = None
                     except Exception as exc:
                         st.session_state["gradcam_overlay"] = None
@@ -144,6 +175,8 @@ def main():
                 prediction = st.session_state.get("prediction")
                 if prediction:
                     st.metric("Prediction", prediction["label"], f"{prediction['confidence']:.1%} confidence")
+                    if selected_sample and selected_sample["case_id"] == "borderline":
+                        st.caption("Borderline model output. This case sits near the model decision boundary.")
                     render_probability_bars(prediction["probabilities"])
                 else:
                     st.caption("Run prediction to show confidence, probabilities, and explanation.")

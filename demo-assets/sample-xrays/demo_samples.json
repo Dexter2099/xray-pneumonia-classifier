@@ -1,0 +1,35 @@
+[
+  {
+    "case_id": "confirmed_pneumonia",
+    "filename": "pneumonia-confirmed.jpeg",
+    "source_path": "C:\\Users\\User\\Documents\\Project Directories\\xray-pneumonia-classifier\\data\\raw\\chest_xray\\test\\PNEUMONIA\\person103_bacteria_488.jpeg",
+    "predicted_label": "PNEUMONIA",
+    "confidence": 1.0,
+    "normal_probability": 0.0,
+    "pneumonia_probability": 1.0,
+    "case_title": "Confirmed pneumonia",
+    "case_description": "High-confidence real model output for the pneumonia demo case."
+  },
+  {
+    "case_id": "normal",
+    "filename": "normal-example.jpeg",
+    "source_path": "C:\\Users\\User\\Documents\\Project Directories\\xray-pneumonia-classifier\\data\\raw\\chest_xray\\train\\NORMAL\\IM-0350-0001.jpeg",
+    "predicted_label": "NORMAL",
+    "confidence": 0.999997,
+    "normal_probability": 0.999997,
+    "pneumonia_probability": 3e-06,
+    "case_title": "Normal X-ray",
+    "case_description": "Model output for a no-pneumonia / normal demo case."
+  },
+  {
+    "case_id": "borderline",
+    "filename": "borderline-pneumonia.jpeg",
+    "source_path": "C:\\Users\\User\\Documents\\Project Directories\\xray-pneumonia-classifier\\data\\raw\\chest_xray\\train\\NORMAL\\IM-0178-0001.jpeg",
+    "predicted_label": "PNEUMONIA",
+    "confidence": 0.504544,
+    "normal_probability": 0.495456,
+    "pneumonia_probability": 0.504544,
+    "case_title": "Borderline case",
+    "case_description": "Borderline model output. This case sits near the model decision boundary with 50.5% pneumonia probability."
+  }
+]
