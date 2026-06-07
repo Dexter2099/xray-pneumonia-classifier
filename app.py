@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -67,21 +68,17 @@ def main():
     st.markdown(
         """
         <style>
-        .block-container { padding-top: 2rem; max-width: 1180px; }
-        .tech-badge {
-            border: 1px solid #d8dee9;
-            border-radius: 8px;
-            padding: 0.75rem 0.9rem;
-            background: #f8fafc;
-            font-weight: 700;
-            text-align: center;
-        }
+        .block-container { padding-top: 1.35rem; max-width: 1160px; }
         .demo-disclaimer {
             border-left: 4px solid #d97706;
             background: #fff7ed;
-            padding: 0.75rem 1rem;
-            margin: 1rem 0 1.25rem;
+            padding: 0.55rem 0.8rem;
+            margin: 0.75rem 0 0.7rem;
         }
+        h1 { margin-bottom: 0.2rem; }
+        h2, h3 { margin-top: 0.45rem; }
+        div[data-testid="stVerticalBlock"] { gap: 0.45rem; }
+        div[data-testid="stImage"] img { max-height: 315px; object-fit: contain; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -94,11 +91,6 @@ def main():
         unsafe_allow_html=True,
     )
 
-    badge_cols = st.columns(4)
-    for col, label in zip(badge_cols, ["PyTorch", "CNN", "Grad-CAM", "Streamlit"]):
-        col.markdown(f'<div class="tech-badge">{label}</div>', unsafe_allow_html=True)
-
-    st.divider()
     left, right = st.columns([0.36, 0.64], gap="large")
     samples = find_demo_samples()
     config = load_config()
@@ -156,23 +148,27 @@ def main():
                 else:
                     st.caption("Run prediction to show confidence, probabilities, and explanation.")
 
-            overlay = st.session_state.get("gradcam_overlay")
-            gradcam_error = st.session_state.get("gradcam_error")
-            st.markdown("### Model explanation")
-            gradcam_cols = st.columns(2, gap="large")
-            gradcam_cols[0].image(image, caption="Original X-ray", use_container_width=True)
-            if overlay is not None:
-                gradcam_cols[1].image(
-                    overlay,
-                    caption="Grad-CAM overlay: highlighted regions influenced the prediction",
-                    use_container_width=True,
-                )
-            elif gradcam_error:
-                gradcam_cols[1].warning(f"Grad-CAM unavailable: {gradcam_error}")
-            else:
-                gradcam_cols[1].info("Grad-CAM overlay appears after prediction.")
+    if image is not None:
+        overlay = st.session_state.get("gradcam_overlay")
+        gradcam_error = st.session_state.get("gradcam_error")
+        st.markdown('<div id="model-explanation-anchor"></div>', unsafe_allow_html=True)
+        st.markdown("### Model explanation")
+        st.caption("Highlighted regions influenced the prediction.")
+        gradcam_cols = st.columns(2, gap="medium")
+        gradcam_cols[0].image(image.resize((260, 260)), caption="Original X-ray", width=260)
+        if overlay is not None:
+            gradcam_cols[1].image(
+                overlay.resize((260, 260)),
+                caption="Grad-CAM overlay",
+                width=260,
+            )
+        elif gradcam_error:
+            gradcam_cols[1].warning(f"Grad-CAM unavailable: {gradcam_error}")
+        else:
+            gradcam_cols[1].info("Grad-CAM overlay appears after prediction.")
 
-    if CONFUSION_MATRIX_PATH.exists() or load_metrics():
+    show_evaluation = os.environ.get("XRAY_DEMO_RECORDING") != "1"
+    if show_evaluation and (CONFUSION_MATRIX_PATH.exists() or load_metrics()):
         st.divider()
         st.markdown("### Evaluation artifacts")
         eval_cols = st.columns(2, gap="large")

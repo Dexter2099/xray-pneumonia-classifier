@@ -60,3 +60,8 @@ def test_build_ffmpeg_command_targets_final_mp4():
         "+faststart",
         "demo-output/xray-classifier-demo.mp4",
     ]
+
+
+def test_demo_recorder_has_required_model_explanation_stop():
+    assert record_demo.MODEL_EXPLANATION_HEADING == "Model explanation"
+    assert callable(record_demo.scroll_to_model_explanation)

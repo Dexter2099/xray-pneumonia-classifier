@@ -20,6 +20,7 @@ SAMPLE_DIR = ROOT / "demo-assets" / "sample-xrays"
 CHECKPOINT_PATH = ROOT / "outputs" / "checkpoints" / "best_model.pth"
 VIEWPORT = {"width": 1440, "height": 900}
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg"}
+MODEL_EXPLANATION_HEADING = "Model explanation"
 
 
 def find_free_port() -> int:
@@ -71,6 +72,7 @@ def wait_for_streamlit(base_url: str, timeout_seconds: int = 45) -> None:
 
 def launch_streamlit(port: int) -> subprocess.Popen[str]:
     env = os.environ.copy()
+    env["XRAY_DEMO_RECORDING"] = "1"
     env.setdefault("STREAMLIT_BROWSER_GATHER_USAGE_STATS", "false")
 
     command = [
@@ -147,6 +149,37 @@ def convert_to_mp4(raw_video_path: Path, output_path: Path) -> None:
     subprocess.run(command, cwd=ROOT, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def scroll_to_model_explanation(page) -> None:
+    heading = page.get_by_role("heading", name=MODEL_EXPLANATION_HEADING)
+    heading.wait_for(timeout=15_000)
+    heading.scroll_into_view_if_needed(timeout=10_000)
+    page.evaluate(
+        """
+        (headingText) => {
+            const headings = Array.from(document.querySelectorAll('h1, h2, h3'));
+            const heading = headings.find((node) => node.textContent.trim() === headingText);
+            if (!heading) {
+                throw new Error(`Heading not found: ${headingText}`);
+            }
+            const scrollers = Array.from(document.querySelectorAll('*')).filter((node) => {
+                const style = window.getComputedStyle(node);
+                return /(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight;
+            });
+            const scrollParent = scrollers.find((node) => node.contains(heading));
+            if (scrollParent) {
+                const currentTop = heading.getBoundingClientRect().top;
+                scrollParent.scrollTop += currentTop - 96;
+            } else {
+                const targetY = Math.max(heading.getBoundingClientRect().top + window.scrollY - 96, 0);
+                window.scrollTo({ top: targetY, behavior: 'instant' });
+            }
+        }
+        """,
+        MODEL_EXPLANATION_HEADING,
+    )
+    page.wait_for_timeout(4_500)
+
+
 def run_demo_flow(base_url: str, video_dir: Path) -> Path:
     try:
         from playwright.sync_api import sync_playwright
@@ -172,14 +205,12 @@ def run_demo_flow(base_url: str, video_dir: Path) -> Path:
         page.wait_for_timeout(1_000)
         page.get_by_role("button", name="Run prediction").click()
         page.locator('[data-testid="stMetric"]').first.wait_for(timeout=45_000)
-        page.wait_for_timeout(5_000)
+        page.wait_for_timeout(2_000)
 
+        scroll_to_model_explanation(page)
         evaluation_heading = page.get_by_text("Evaluation artifacts")
         if evaluation_heading.count() > 0:
             evaluation_heading.scroll_into_view_if_needed(timeout=10_000)
-            page.wait_for_timeout(3_000)
-        else:
-            page.evaluate("window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })")
             page.wait_for_timeout(2_000)
         page.evaluate("window.scrollTo({ top: 0, behavior: 'smooth' })")
         page.wait_for_timeout(2_000)
