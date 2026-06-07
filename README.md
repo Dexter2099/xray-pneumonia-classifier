@@ -50,3 +50,53 @@ You can launch a simple Streamlit interface to test the model on your own images
 pip install -r requirements.txt
 streamlit run app.py
 ```
+
+## Portfolio demo reel
+The Streamlit app includes a portfolio demo mode for recording a short product-style reel. It keeps the project in Streamlit and uses the local trained checkpoint, local demo X-ray samples, and existing evaluation artifacts.
+
+This project is educational portfolio software only. It is not clinical software and must not be used for medical diagnosis.
+
+### Expected local files
+The recorder expects these files to exist locally:
+
+```text
+outputs/checkpoints/best_model.pth
+demo-assets/sample-xrays/
+```
+
+Place at least one Normal and one Pneumonia demo image in `demo-assets/sample-xrays/`. The app and recorder detect labels from filenames or parent folders containing `NORMAL` and `PNEUMONIA`, for example:
+
+```text
+demo-assets/sample-xrays/normal-example.jpeg
+demo-assets/sample-xrays/pneumonia-example.jpeg
+```
+
+Large datasets and model checkpoints should stay local. Do not commit `data/`, `outputs/`, or large model files.
+
+### Run the app
+```bash
+streamlit run app.py
+```
+
+The demo page supports uploaded images and built-in samples. It shows the original X-ray, prediction label, confidence score, class probability bars, Grad-CAM overlay, and the confusion matrix when `outputs/visualizations/confusion_matrix.png` exists. Metrics are only shown when a real metrics JSON file exists.
+
+### Record the reel
+Install Playwright's Chromium browser once:
+
+```bash
+python -m playwright install chromium
+```
+
+Then record the demo:
+
+```bash
+python scripts/record_demo.py
+```
+
+The recorder launches Streamlit on a free local port, drives the Pneumonia sample flow in a 1440x900 browser viewport, records with Playwright, and writes:
+
+```text
+demo-output/xray-classifier-demo.mp4
+```
+
+If the checkpoint or required sample images are missing, the recorder exits with the exact missing path.
