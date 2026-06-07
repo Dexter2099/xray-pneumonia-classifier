@@ -74,12 +74,12 @@ The selector scans local X-ray images, runs the trained checkpoint, and writes:
 
 ```text
 demo-assets/sample-xrays/demo_samples.json
-demo-assets/sample-xrays/pneumonia-confirmed.jpeg
+demo-assets/sample-xrays/pneumonia-high-confidence.jpeg
 demo-assets/sample-xrays/normal-example.jpeg
 demo-assets/sample-xrays/borderline-pneumonia.jpeg
 ```
 
-The borderline case is selected from real model probabilities. It may not be exactly 50%; the metadata records the actual NORMAL and PNEUMONIA probabilities.
+The high-confidence pneumonia case is selected from real model outputs using both pneumonia probability and Grad-CAM visual quality, so the reel shows a prediction that is also explainable on screen. The borderline case is selected from real model probabilities. It may not be exactly 50%; the metadata records the actual NORMAL and PNEUMONIA probabilities. Grad-CAM highlights model-influential regions, not a clinical diagnosis.
 
 Large datasets and model checkpoints should stay local. Do not commit `data/`, `outputs/`, or large model files.
 
@@ -88,7 +88,7 @@ Large datasets and model checkpoints should stay local. Do not commit `data/`, `
 streamlit run app.py
 ```
 
-The demo page supports uploaded images and three built-in real-model cases: confirmed pneumonia, normal X-ray, and borderline case. It shows the original X-ray, prediction label, confidence score, class probability bars, Grad-CAM overlay, and the confusion matrix when `outputs/visualizations/confusion_matrix.png` exists. Metrics are only shown when a real metrics JSON file exists.
+The demo page supports uploaded images and three built-in real-model cases: high-confidence pneumonia, normal X-ray, and borderline case. It shows the original X-ray, prediction label, confidence score, class probability bars, Grad-CAM overlay, and the confusion matrix when `outputs/visualizations/confusion_matrix.png` exists. Metrics are only shown when a real metrics JSON file exists.
 
 ### Record the reel
 Install Playwright's Chromium browser once:

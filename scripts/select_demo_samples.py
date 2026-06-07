@@ -5,6 +5,7 @@ from pathlib import Path
 import shutil
 import sys
 
+import numpy as np
 from PIL import Image
 
 
@@ -24,12 +25,12 @@ DATASET_DIRS = [
 ]
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg"}
 OUTPUT_FILENAMES = {
-    "confirmed_pneumonia": "pneumonia-confirmed.jpeg",
+    "high_confidence_pneumonia": "pneumonia-high-confidence.jpeg",
     "normal": "normal-example.jpeg",
     "borderline": "borderline-pneumonia.jpeg",
 }
 CASE_TITLES = {
-    "confirmed_pneumonia": "Confirmed pneumonia",
+    "high_confidence_pneumonia": "High-confidence pneumonia",
     "normal": "Normal X-ray",
     "borderline": "Borderline case",
 }
@@ -50,6 +51,29 @@ def discover_images(dataset_dirs: list[Path] = DATASET_DIRS) -> list[Path]:
             if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
         )
     return images
+
+
+def score_gradcam_quality(cam) -> float:
+    cam_array = np.asarray(cam, dtype=np.float32)
+    if cam_array.size == 0:
+        return 0.0
+    cam_array = cam_array - float(np.min(cam_array))
+    max_value = float(np.max(cam_array))
+    if max_value <= 1e-8:
+        return 0.0
+    cam_array = cam_array / max_value
+    contrast = float(np.percentile(cam_array, 95) - np.percentile(cam_array, 5))
+    high_activation_area = float(np.mean(cam_array >= 0.55))
+    variance = float(np.var(cam_array))
+    return round((contrast * 0.45) + (high_activation_area * 0.35) + (variance * 0.20), 6)
+
+
+def compute_gradcam_score(model, input_tensor) -> float:
+    from src.gradcam import GradCAM
+
+    gradcam = GradCAM(model, model.conv3)
+    cam = gradcam.generate(input_tensor)
+    return score_gradcam_quality(cam)
 
 
 def predict_candidates(image_paths: list[Path], config: dict) -> list[dict]:
@@ -81,8 +105,12 @@ def predict_candidates(image_paths: list[Path], config: dict) -> list[dict]:
                 outputs = model(tensor)
                 probabilities = F.softmax(outputs, dim=1)[0].detach().cpu()
                 confidence, prediction = torch.max(probabilities, 0)
+            predicted_label = labels[int(prediction.item())]
+            gradcam_score = None
+            if predicted_label == "PNEUMONIA":
+                gradcam_score = compute_gradcam_score(model, tensor)
             result = {
-                "label": labels[int(prediction.item())],
+                "label": predicted_label,
                 "confidence": float(confidence.item()),
                 "probabilities": {
                     label: float(probabilities[label_index].item())
@@ -102,6 +130,7 @@ def predict_candidates(image_paths: list[Path], config: dict) -> list[dict]:
                     "NORMAL": float(result["probabilities"]["NORMAL"]),
                     "PNEUMONIA": float(result["probabilities"]["PNEUMONIA"]),
                 },
+                "gradcam_score": gradcam_score,
             }
         )
         if index % 100 == 0:
@@ -125,13 +154,25 @@ def select_best_samples(candidates: list[dict]) -> dict[str, dict]:
         item for item in pneumonia_candidates
         if source_has_class_folder(item["source_path"], "PNEUMONIA")
     ]
-    confirmed_pool = labelled_pneumonia_candidates or pneumonia_candidates
-    confirmed_pneumonia = max(
-        confirmed_pool,
-        key=lambda item: (
-            item["confidence"] >= 0.95,
-            item["confidence"],
-        ),
+    high_confidence_pool = labelled_pneumonia_candidates or pneumonia_candidates
+
+    def pneumonia_selection_score(item):
+        probability = item["probabilities"]["PNEUMONIA"]
+        gradcam_score = float(item.get("gradcam_score") or 0.0)
+        in_target_range = 0.85 <= probability <= 0.95
+        in_acceptable_range = 0.80 <= probability <= 0.98
+        distance_from_target = abs(probability - 0.90)
+        overconfident_penalty = max(probability - 0.98, 0.0) * 6.0
+        return (
+            2.0 if in_target_range else 0.0,
+            1.0 if in_acceptable_range else 0.0,
+            gradcam_score,
+            -distance_from_target - overconfident_penalty,
+        )
+
+    high_confidence_pneumonia = max(
+        high_confidence_pool,
+        key=pneumonia_selection_score,
     )
     normal = max(
         normal_candidates,
@@ -145,7 +186,7 @@ def select_best_samples(candidates: list[dict]) -> dict[str, dict]:
         key=lambda item: abs(item["probabilities"]["PNEUMONIA"] - 0.50),
     )
     return {
-        "confirmed_pneumonia": confirmed_pneumonia,
+        "high_confidence_pneumonia": high_confidence_pneumonia,
         "normal": normal,
         "borderline": borderline,
     }
@@ -154,14 +195,14 @@ def select_best_samples(candidates: list[dict]) -> dict[str, dict]:
 def build_metadata_entry(case_id: str, candidate: dict, filename: str) -> dict:
     pneumonia_probability = candidate["probabilities"]["PNEUMONIA"]
     descriptions = {
-        "confirmed_pneumonia": "High-confidence real model output for the pneumonia demo case.",
-        "normal": "Model output for a no-pneumonia / normal demo case.",
+        "high_confidence_pneumonia": "Real model output with high pneumonia probability.",
+        "normal": "Real model output for a normal / no-pneumonia case.",
         "borderline": (
-            "Borderline model output. This case sits near the model decision boundary "
+            "Near the model decision boundary "
             f"with {pneumonia_probability:.1%} pneumonia probability."
         ),
     }
-    return {
+    entry = {
         "case_id": case_id,
         "filename": filename,
         "source_path": candidate["source_path"],
@@ -172,6 +213,9 @@ def build_metadata_entry(case_id: str, candidate: dict, filename: str) -> dict:
         "case_title": CASE_TITLES[case_id],
         "case_description": descriptions[case_id],
     }
+    if candidate.get("gradcam_score") is not None:
+        entry["gradcam_quality_score"] = round(float(candidate["gradcam_score"]), 6)
+    return entry
 
 
 def write_selected_samples(selected: dict[str, dict], sample_dir: Path = SAMPLE_DIR) -> list[dict]:

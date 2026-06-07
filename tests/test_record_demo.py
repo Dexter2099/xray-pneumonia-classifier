@@ -30,7 +30,7 @@ def test_find_demo_samples_requires_three_case_metadata(tmp_path):
     (sample_dir / "demo_samples.json").write_text(
         """
         [
-          {"case_id": "confirmed_pneumonia", "filename": "pneumonia-confirmed.jpeg"},
+          {"case_id": "high_confidence_pneumonia", "filename": "pneumonia-high-confidence.jpeg"},
           {"case_id": "normal", "filename": "normal-example.jpeg"}
         ]
         """,
@@ -52,7 +52,7 @@ def test_find_demo_samples_accepts_metadata_cases(tmp_path):
     sample_dir = tmp_path / "demo-assets" / "sample-xrays"
     sample_dir.mkdir(parents=True)
     filenames = {
-        "confirmed_pneumonia": "pneumonia-confirmed.jpeg",
+        "high_confidence_pneumonia": "pneumonia-high-confidence.jpeg",
         "normal": "normal-example.jpeg",
         "borderline": "borderline-pneumonia.jpeg",
     }
@@ -61,7 +61,7 @@ def test_find_demo_samples_accepts_metadata_cases(tmp_path):
     (sample_dir / "demo_samples.json").write_text(
         """
         [
-          {"case_id": "confirmed_pneumonia", "filename": "pneumonia-confirmed.jpeg"},
+          {"case_id": "high_confidence_pneumonia", "filename": "pneumonia-high-confidence.jpeg"},
           {"case_id": "normal", "filename": "normal-example.jpeg"},
           {"case_id": "borderline", "filename": "borderline-pneumonia.jpeg"}
         ]
@@ -72,12 +72,12 @@ def test_find_demo_samples_accepts_metadata_cases(tmp_path):
     samples = record_demo.find_demo_samples(sample_dir)
 
     assert [sample["case_id"] for sample in samples] == [
-        "confirmed_pneumonia",
+        "high_confidence_pneumonia",
         "normal",
         "borderline",
     ]
     assert [sample["path"] for sample in samples] == [
-        sample_dir / filenames["confirmed_pneumonia"],
+        sample_dir / filenames["high_confidence_pneumonia"],
         sample_dir / filenames["normal"],
         sample_dir / filenames["borderline"],
     ]

@@ -23,9 +23,9 @@ CHECKPOINT_PATH = ROOT / "outputs" / "checkpoints" / "best_model.pth"
 VIEWPORT = {"width": 1440, "height": 900}
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg"}
 MODEL_EXPLANATION_HEADING = "Model explanation"
-REQUIRED_CASE_IDS = ["confirmed_pneumonia", "normal", "borderline"]
+REQUIRED_CASE_IDS = ["high_confidence_pneumonia", "normal", "borderline"]
 CASE_BUTTONS = {
-    "confirmed_pneumonia": "Confirmed pneumonia",
+    "high_confidence_pneumonia": "High-confidence pneumonia",
     "normal": "Normal X-ray",
     "borderline": "Borderline case",
 }

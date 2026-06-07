@@ -186,7 +186,7 @@ def main():
         gradcam_error = st.session_state.get("gradcam_error")
         st.markdown('<div id="model-explanation-anchor"></div>', unsafe_allow_html=True)
         st.markdown("### Model explanation")
-        st.caption("Highlighted regions influenced the prediction.")
+        st.caption("Highlighted regions influenced the model prediction. For normal cases, this is not disease evidence.")
         gradcam_cols = st.columns(2, gap="medium")
         gradcam_cols[0].image(image.resize((260, 260)), caption="Original X-ray", width=260)
         if overlay is not None:
