@@ -1,0 +1,53 @@
+{
+  "baseline_commit": "fe9c3d2b5fa253f00ca0344c02ddf8ba48d440b6",
+  "checkpoint_sha256": "3bf52f20b36e5e44eea344db660f9394484a31b2218119c89e2ea3d51db2b1b8",
+  "torch_version": "2.7.0+cpu",
+  "device": "cpu",
+  "threads": 4,
+  "absolute_tolerance": 1e-06,
+  "relative_tolerance": 1e-05,
+  "preprocessing": {
+    "image_size": 224,
+    "grayscale": true,
+    "mean": 0.5,
+    "std": 0.5
+  },
+  "cases": [
+    {
+      "image": "demo-assets/sample-xrays/borderline-pneumonia.jpeg",
+      "sha256": "ef3b5ce221364adef434442cb5448e172820db40f6d58c36cea93b070a729c14",
+      "prediction": {
+        "label": "PNEUMONIA",
+        "confidence": 0.5045440793037415,
+        "probabilities": {
+          "NORMAL": 0.4954560101032257,
+          "PNEUMONIA": 0.5045440793037415
+        }
+      }
+    },
+    {
+      "image": "demo-assets/sample-xrays/normal-example.jpeg",
+      "sha256": "f6bc31257550a28ee27ebfddd1f6e4a329df87797bf020d8921325fc8e5dd4f3",
+      "prediction": {
+        "label": "NORMAL",
+        "confidence": 0.9999970197677612,
+        "probabilities": {
+          "NORMAL": 0.9999970197677612,
+          "PNEUMONIA": 3.0057396998017794e-06
+        }
+      }
+    },
+    {
+      "image": "demo-assets/sample-xrays/pneumonia-high-confidence.jpeg",
+      "sha256": "a2f359af16531c89f95dbe9b5d5d3b287afba7960ce31ade71aa674d3b5cbb4c",
+      "prediction": {
+        "label": "PNEUMONIA",
+        "confidence": 0.9260272979736328,
+        "probabilities": {
+          "NORMAL": 0.07397271692752838,
+          "PNEUMONIA": 0.9260272979736328
+        }
+      }
+    }
+  ]
+}

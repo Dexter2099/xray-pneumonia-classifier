@@ -1,0 +1,21 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+include = ["src/errors.py", "src/settings.py", "src/inputs.py", "src/inference.py", "src/gradcam.py", "src/viewer/*.py", "scripts/benchmark_inference.py", "scripts/verify_regression.py", "scripts/viewer_smoke.py", "tests/conftest.py", "tests/test_inputs.py", "tests/test_prediction_service.py", "tests/test_gradcam.py", "tests/test_trained_regression.py", "tests/test_viewer.py", "tests/test_reports.py", "src/reporting.py"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/conftest.py" = ["E402"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src/errors.py", "src/settings.py", "src/inputs.py", "src/inference.py", "src/gradcam.py"]
+check_untyped_defs = true
+ignore_missing_imports = true
+follow_imports = "silent"
+
+[[tool.mypy.overrides]]
+module = ["torch.*", "torchvision.*", "numpy.*", "cv2.*", "PIL.*", "matplotlib.*", "yaml.*"]
+follow_imports = "skip"

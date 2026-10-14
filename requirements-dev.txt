@@ -1,0 +1,6 @@
+-r requirements-viewer.txt
+pytest==8.4.1
+pytest-qt==4.5.0
+ruff==0.17.0
+mypy==2.4.0
+pip-audit==2.10.1

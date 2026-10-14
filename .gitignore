@@ -10,3 +10,6 @@ outputs/
 data/
 .superpowers/
 demo-output/
+.venv/
+.ruff_cache/
+.mypy_cache/

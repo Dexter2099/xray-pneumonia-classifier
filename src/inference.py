@@ -1,67 +1,120 @@
-import os
+"""Reusable, UI-independent prediction service and legacy one-shot adapter."""
+
+import hashlib
+import pickle
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from threading import RLock
+from time import perf_counter
+from typing import Protocol
+
 import torch
-import torch.nn.functional as F
-from torchvision import transforms
-from PIL import Image
 
+from src.errors import ConfigurationError, ModelLoadError, PredictionError
+from src.inputs import ModelInput, preprocess_image
 from src.model import SimpleCNN
+from src.settings import InferenceSettings
+
+LABELS = ("NORMAL", "PNEUMONIA")
 
 
-def predict_image(img, config):
-    """Load model checkpoint and predict label for a single image.
+@dataclass(frozen=True)
+class Prediction:
+    label: str
+    confidence: float
+    normal_probability: float
+    pneumonia_probability: float
 
-    Parameters
-    ----------
-    img : PIL.Image or torch.Tensor
-        Input image. If tensor, should be shape (1, H, W) in range [0, 1].
-    config : dict
-        Configuration dictionary containing at least 'checkpoint_dir'.
+    def to_dict(self) -> dict:
+        return {
+            "label": self.label,
+            "confidence": self.confidence,
+            "probabilities": {
+                "NORMAL": self.normal_probability,
+                "PNEUMONIA": self.pneumonia_probability,
+            },
+        }
 
-    Returns
-    -------
-    dict
-        Prediction payload with label, confidence and class probabilities.
-    """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    checkpoint_path = os.path.join(config["checkpoint_dir"], "best_model.pth")
-    model = SimpleCNN().to(device)
-    model.load_state_dict(torch.load(checkpoint_path, map_location=device))
-    model.eval()
+class Predictor(Protocol):
+    """Small prediction dependency; test doubles implement this contract too."""
 
-    preprocess = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-        transforms.Normalize([0.5], [0.5]),
-    ])
+    def predict(self, source: ModelInput) -> Prediction: ...
 
-    if isinstance(img, torch.Tensor):
-        tensor = img
-        if tensor.ndim == 3:  # (C,H,W) or (1,H,W)
-            pass
-        else:
-            raise ValueError("Tensor img must have shape (C,H,W)")
-        tensor = transforms.Normalize([0.5], [0.5])(tensor)
-    else:
-        img = img.convert("L")
-        tensor = preprocess(img)
 
-    tensor = tensor.unsqueeze(0).to(device)
+class PredictionService:
+    """Load once per service. Serialize use when sharing a model with Grad-CAM."""
 
-    with torch.no_grad():
-        outputs = model(tensor)
-        probabilities = F.softmax(outputs, dim=1)[0].detach().cpu()
-        confidence, pred = torch.max(probabilities, 0)
+    def __init__(self, settings: InferenceSettings) -> None:
+        started = perf_counter()
+        self.settings = settings
+        self.lock = RLock()
+        self.prediction_count = 0
+        self.model_load_count = 0
+        if settings.device == "cuda" and not torch.cuda.is_available():
+            raise ConfigurationError("CUDA was requested but is unavailable. Select cpu or auto.")
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = torch.device(device if settings.device == "auto" else settings.device)
+        if not settings.checkpoint_path.is_file():
+            raise ModelLoadError(
+                "Model checkpoint was not found. Configure best_model.pth and reload the model."
+            )
+        try:
+            weights = torch.load(settings.checkpoint_path, map_location="cpu", weights_only=True)
+            self.model = SimpleCNN()
+            self.model.load_state_dict(weights, strict=True)
+            self.model.to(self.device).eval()
+            with settings.checkpoint_path.open("rb") as stream:
+                self.checkpoint_sha256 = hashlib.file_digest(stream, "sha256").hexdigest()
+        except (
+            OSError,
+            RuntimeError,
+            ValueError,
+            TypeError,
+            EOFError,
+            pickle.UnpicklingError,
+        ) as exc:
+            raise ModelLoadError(
+                "Cannot load this checkpoint. Use the trusted SimpleCNN state dictionary."
+            ) from exc
+        self.model_load_count = 1
+        self.load_seconds = perf_counter() - started
 
-    labels = ["NORMAL", "PNEUMONIA"]
-    probability_payload = {
-        label: float(probabilities[index].item())
-        for index, label in enumerate(labels)
-    }
-    predicted_label = labels[int(pred.item())]
+    def predict(self, source: ModelInput) -> Prediction:
+        return self.predict_batch([source])[0]
 
-    return {
-        "label": predicted_label,
-        "confidence": float(confidence.item()),
-        "probabilities": probability_payload,
-    }
+    def predict_batch(self, sources: Sequence[ModelInput]) -> list[Prediction]:
+        if not sources:
+            raise PredictionError("Provide at least one image for prediction.")
+        tensors = torch.stack([preprocess_image(source) for source in sources]).to(self.device)
+        with self.lock, torch.inference_mode():
+            try:
+                outputs = self.model(tensors)
+                if (
+                    outputs.shape != (len(sources), len(LABELS))
+                    or not torch.isfinite(outputs).all()
+                ):
+                    raise PredictionError(
+                        "Model produced invalid scores. Reload the trusted checkpoint."
+                    )
+                probabilities = torch.softmax(outputs, dim=1).cpu()
+            except RuntimeError as exc:
+                raise PredictionError(
+                    "Prediction failed. Try a smaller batch or use the CPU device."
+                ) from exc
+            results = []
+            for row in probabilities:
+                index = int(row.argmax().item())
+                results.append(
+                    Prediction(LABELS[index], float(row[index]), float(row[0]), float(row[1]))
+                )
+            self.prediction_count += len(results)
+            return results
+
+
+def predict_image(
+    img: ModelInput, config: Mapping, *, service: PredictionService | None = None
+) -> dict:
+    """Compatibility adapter. Repeated callers should pass a long-lived service."""
+    engine = service or PredictionService(InferenceSettings.from_mapping(config))
+    return engine.predict(img).to_dict()
