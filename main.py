@@ -1,11 +1,11 @@
 import argparse
 import yaml
 import os
-from src.train import train_model
-from src.evaluate import evaluate_model
-from src.gradcam import visualize_gradcam
+from pathlib import Path
 
-def load_config(config_path='src/config.yaml'):
+ROOT = Path(__file__).resolve().parent
+
+def load_config(config_path=ROOT / 'src/config.yaml'):
     with open(config_path, 'r') as file:
         return yaml.safe_load(file)
 
@@ -25,16 +25,19 @@ if __name__ == '__main__':
     print(f"[INFO] Running in {args.mode} mode...")
 
     if args.mode == 'train':
+        from src.train import train_model
         print("[INFO] Starting training...")
         train_model(config)
         print("[INFO] Training completed.")
 
     elif args.mode == 'eval':
+        from src.evaluate import evaluate_model
         print("[INFO] Starting evaluation...")
         evaluate_model(config)
         print("[INFO] Evaluation completed. Check outputs/visualizations/ for confusion matrix.")
 
     elif args.mode == 'gradcam':
+        from src.gradcam import visualize_gradcam
         if not args.image:
             raise ValueError("You must provide --image path for Grad-CAM mode.")
         print(f"[INFO] Running Grad-CAM on image: {args.image}")
