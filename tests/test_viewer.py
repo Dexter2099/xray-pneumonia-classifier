@@ -10,8 +10,9 @@ from src.inference import Prediction
 from src.settings import InferenceSettings
 from src.viewer.controller import ViewerController
 from src.viewer.diagnostics import TimelineEvent
+from src.viewer.messages import ModelReady
 from src.viewer.window import ViewerWindow
-from src.viewer.worker import AnalysisBackend
+from src.viewer.worker import AnalysisBackend, AnalysisWorker
 
 
 class FakePredictor:
@@ -89,6 +90,16 @@ def test_valid_image_prediction_explanation_and_model_reuse(viewer, qtbot, tmp_p
     assert all(event.outcome == "Complete" for event in events)
     assert all(event.worker_thread_id != threading.get_ident() for event in events)
     assert all(event.elapsed_seconds > 0 for event in events)
+
+
+def test_ready_signal_transfers_metadata_without_exposing_backend(qtbot, tmp_path):
+    backend = AnalysisBackend(FakePredictor(), FakeExplainer(), "f" * 64, 0.01, "cpu")
+    worker = AnalysisWorker(InferenceSettings(tmp_path / "unused"), lambda settings: backend)
+    with qtbot.waitSignal(worker.ready) as signal:
+        worker.initialize()
+    ready = signal.args[0]
+    assert ready == ModelReady("f" * 64, 0.01, "cpu", 1, 0)
+    assert not hasattr(ready, "predictor") and not hasattr(ready, "explainer")
 
 
 def test_corrupt_image_clears_results_then_recovers(viewer, qtbot, tmp_path):

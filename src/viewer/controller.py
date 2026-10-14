@@ -10,8 +10,9 @@ from PySide6.QtGui import QCloseEvent
 from src.settings import InferenceSettings
 from src.viewer.diagnostics import InputInspection, TimelineEvent
 from src.viewer.evidence import VerificationEvidence
+from src.viewer.messages import AnalysisResult, ModelReady
 from src.viewer.window import ViewerWindow
-from src.viewer.worker import AnalysisBackend, AnalysisResult, AnalysisWorker, create_backend
+from src.viewer.worker import AnalysisBackend, AnalysisWorker, create_backend
 
 
 class ViewerController(QObject):
@@ -62,24 +63,19 @@ class ViewerController(QObject):
 
     def _set_busy(self, busy: bool, status: str) -> None:
         self.busy = busy
-        self.window.open_button.setEnabled(not busy and not self.closing)
-        self.window.retry_button.setEnabled(not busy and not self.closing)
-        self.window.hood.refresh_button.setEnabled(not busy and not self.closing)
-        self.window.predict_button.setEnabled(
-            not busy and self.model_ready and self.image is not None and not self.closing
+        available = not busy and not self.closing
+        self.window.set_actions_enabled(
+            available=available,
+            can_predict=available and self.model_ready and self.image is not None,
         )
-        self.window.status_label.setText(status)
+        self.window.set_status(status)
         if self.closing and not busy:
             self.worker_thread.quit()
 
     @Slot(object)
-    def _ready(self, backend: AnalysisBackend) -> None:
+    def _ready(self, ready: ModelReady) -> None:
         self.model_ready = True
-        self.window.session_label.setText(
-            f"Model loads: {self.worker.model_loads}  |  Predictions: {self.worker.predictions}  |  Device: {backend.device}"
-        )
-        self.window.timing_label.setText(f"Model startup: {backend.load_seconds * 1000:.1f} ms")
-        self.window.set_message(f"Checkpoint SHA-256: {backend.checkpoint_sha256[:16]}...")
+        self.window.show_model_ready(ready)
         self._set_busy(False, "Ready - open an image")
 
     @Slot(str)
@@ -87,6 +83,8 @@ class ViewerController(QObject):
         if self.busy or self.closing:
             return
         self.request_id += 1
+        # Invalidate old pixels/results before decoding: a failed open must never leave
+        # the previous image's result displayed beside the new filename.
         self.image = None
         self.window.set_preview(None)
         self.window.hood.set_inspection(None)
@@ -96,6 +94,7 @@ class ViewerController(QObject):
 
     @Slot(int, object)
     def _image_loaded(self, request_id: int, image: Image.Image) -> None:
+        # Queued results can outlive the request that produced them.
         if request_id != self.request_id:
             return
         self.image = image
@@ -141,23 +140,7 @@ class ViewerController(QObject):
     def _completed(self, result: AnalysisResult) -> None:
         if result.request_id != self.request_id:
             return
-        prediction = result.prediction
-        self.window.prediction_label.setText(f"Prediction: {prediction.label}")
-        self.window.probabilities_label.setText(
-            f"Model probabilities - NORMAL: {prediction.normal_probability:.2%}  |  PNEUMONIA: {prediction.pneumonia_probability:.2%}"
-        )
-        self.window.timing_label.setText(
-            f"Prediction: {result.prediction_seconds * 1000:.1f} ms  |  Grad-CAM: {result.explanation_seconds * 1000:.1f} ms"
-        )
-        self.window.session_label.setText(
-            f"Model loads: {result.model_loads}  |  Predictions: {result.predictions}"
-        )
-        self.window.set_overlay(result.overlay)
-        self.window.set_message(
-            result.warning
-            or "Highlighted regions influenced this model output; they are not a diagnosis.",
-            bool(result.warning),
-        )
+        self.window.show_analysis_result(result)
         self._set_busy(False, "Complete - prediction available" if result.warning else "Complete")
 
     @Slot(int, str)
@@ -179,7 +162,7 @@ class ViewerController(QObject):
     @Slot(int, str)
     def _stage(self, request_id: int, message: str) -> None:
         if request_id == self.request_id:
-            self.window.status_label.setText(message)
+            self.window.set_status(message)
 
     @Slot()
     def reload_model(self) -> None:
@@ -200,6 +183,8 @@ class ViewerController(QObject):
     @Slot(object)
     def close(self, event: QCloseEvent) -> None:
         if self.worker_thread.isRunning():
+            # Forcibly terminating a running PyTorch call can leave native resources
+            # inconsistent. Finish it, then let thread.finished close the window.
             event.ignore()
             self.closing = True
             self._set_busy(self.busy, "Finishing current operation before closing...")

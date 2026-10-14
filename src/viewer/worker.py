@@ -12,11 +12,13 @@ from PySide6.QtCore import QObject, Signal, Slot
 
 from src.errors import XrayError
 from src.gradcam import Explainer, GradCamExplainer
-from src.inference import Prediction, PredictionService, Predictor
+from src.inference import PredictionService, Predictor
 from src.inputs import load_image
 from src.settings import InferenceSettings
 from src.viewer.diagnostics import TimelineEvent, inspect_input
 from src.viewer.evidence import VerificationEvidence, load_verification
+from src.viewer.messages import AnalysisResult as AnalysisResult
+from src.viewer.messages import ModelReady
 
 LOGGER = logging.getLogger(__name__)
 
@@ -39,18 +41,6 @@ def create_backend(settings: InferenceSettings) -> AnalysisBackend:
         service.load_seconds,
         str(service.device),
     )
-
-
-@dataclass(frozen=True)
-class AnalysisResult:
-    request_id: int
-    prediction: Prediction
-    overlay: Image.Image | None
-    warning: str
-    prediction_seconds: float
-    explanation_seconds: float
-    model_loads: int
-    predictions: int
 
 
 class AnalysisWorker(QObject):
@@ -131,7 +121,17 @@ class AnalysisWorker(QObject):
                 self.backend = self.factory(self.settings)
             self.model_loads += 1
             self.read_verification()
-            self.ready.emit(self.backend)
+            # A queued signal transfers metadata, not permission for the GUI to touch
+            # the shared model or read mutable worker counters across threads.
+            self.ready.emit(
+                ModelReady(
+                    self.backend.checkpoint_sha256,
+                    self.backend.load_seconds,
+                    self.backend.device,
+                    self.model_loads,
+                    self.predictions,
+                )
+            )
         except XrayError as exc:
             self.failed.emit(0, str(exc))
         except Exception:
