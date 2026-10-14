@@ -1,0 +1,11 @@
+# CPU PyTorch wheels: install torch/torchvision with the command documented in README.
+torch==2.14.1
+torchvision==0.29.1
+numpy==2.1.3
+Pillow==12.3.0
+opencv-python==4.11.0.86
+PyYAML==6.0.2
+matplotlib==3.10.3
+scikit-learn==1.6.1
+seaborn==0.13.2
+PySide6==6.12.0

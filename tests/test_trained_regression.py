@@ -1,4 +1,5 @@
 """Golden results captured from fe9c3d2 BEFORE changing inference."""
+
 import hashlib
 import json
 from pathlib import Path
@@ -26,5 +27,7 @@ def test_trained_checkpoint_preserves_reference_predictions():
         assert actual["label"] == case["prediction"]["label"]
         for label, expected in case["prediction"]["probabilities"].items():
             assert actual["probabilities"][label] == pytest.approx(
-                expected, abs=baseline["absolute_tolerance"], rel=baseline["relative_tolerance"]
+                expected,
+                abs=baseline["absolute_tolerance"],
+                rel=baseline["relative_tolerance"],
             )

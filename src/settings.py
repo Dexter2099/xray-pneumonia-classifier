@@ -1,4 +1,5 @@
 """Validated inference settings; relative paths are anchored to the repository."""
+
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,7 +19,7 @@ class InferenceSettings:
     def __post_init__(self) -> None:
         path = Path(self.checkpoint_path).expanduser()
         object.__setattr__(self, "checkpoint_path", (ROOT / path).resolve())
-        if self.device not in {"auto", "cpu", "cuda"}:
+        if not isinstance(self.device, str) or self.device not in {"auto", "cpu", "cuda"}:
             raise ConfigurationError("Device must be auto, cpu, or cuda.")
 
     @classmethod
@@ -31,10 +32,12 @@ class InferenceSettings:
         directory = config.get("checkpoint_dir")
         if checkpoint is None and directory is None:
             raise ConfigurationError("Set checkpoint_path or checkpoint_dir.")
-        try:
-            path = Path(checkpoint) if checkpoint is not None else Path(directory) / "best_model.pth"
-        except TypeError as exc:
-            raise ConfigurationError("Checkpoint location must be a filesystem path.") from exc
+        if isinstance(checkpoint, (str, Path)) and str(checkpoint).strip():
+            path = Path(checkpoint)
+        elif checkpoint is None and isinstance(directory, (str, Path)) and str(directory).strip():
+            path = Path(directory) / "best_model.pth"
+        else:
+            raise ConfigurationError("Checkpoint location must be a filesystem path.")
         return cls(path, config.get("device", "auto"))
 
 

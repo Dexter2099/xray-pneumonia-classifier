@@ -19,13 +19,21 @@ def test_equivalent_image_and_tensor_inputs_match_without_mutation():
     assert torch.equal(tensor, original)
 
 
-@pytest.mark.parametrize("tensor", [
-    torch.zeros(224, 224), torch.zeros(3, 224, 224), torch.zeros(1, 32, 32),
-    torch.zeros(1, 1, 224, 224), torch.zeros(1, 224, 224, dtype=torch.uint8),
-    torch.zeros(1, 224, 224, dtype=torch.float64), torch.full((1, 224, 224), -0.1),
-    torch.full((1, 224, 224), 1.1), torch.full((1, 224, 224), float("nan")),
-    torch.full((1, 224, 224), float("inf")),
-])
+@pytest.mark.parametrize(
+    "tensor",
+    [
+        torch.zeros(224, 224),
+        torch.zeros(3, 224, 224),
+        torch.zeros(1, 32, 32),
+        torch.zeros(1, 1, 224, 224),
+        torch.zeros(1, 224, 224, dtype=torch.uint8),
+        torch.zeros(1, 224, 224, dtype=torch.float64),
+        torch.full((1, 224, 224), -0.1),
+        torch.full((1, 224, 224), 1.1),
+        torch.full((1, 224, 224), float("nan")),
+        torch.full((1, 224, 224), float("inf")),
+    ],
+)
 def test_invalid_tensors_fail_at_the_input_boundary(tensor):
     with pytest.raises(ImageInputError):
         preprocess_image(tensor)
@@ -64,7 +72,7 @@ def test_missing_unsupported_and_high_bit_depth_images_are_rejected(tmp_path):
 
 
 def test_image_limits_are_enforced_before_decoding(monkeypatch, tmp_path):
-    import src.inputs as inputs
+    from src import inputs
 
     monkeypatch.setattr(inputs, "MAX_IMAGE_BYTES", 3)
     path = tmp_path / "large.png"
@@ -86,8 +94,17 @@ def test_relative_checkpoint_path_is_independent_of_working_directory(tmp_path, 
     assert settings.checkpoint_path != tmp_path / "outputs/checkpoints/best_model.pth"
 
 
-@pytest.mark.parametrize("config", [None, [], {}, {"checkpoint_dir": 123},
-    {"checkpoint_dir": ".", "image_size": 128}, {"checkpoint_dir": ".", "device": "other"}])
+@pytest.mark.parametrize(
+    "config",
+    [
+        None,
+        [],
+        {},
+        {"checkpoint_dir": 123},
+        {"checkpoint_dir": ".", "image_size": 128},
+        {"checkpoint_dir": ".", "device": "other"},
+    ],
+)
 def test_bad_configuration_fails_clearly(config):
     with pytest.raises(ConfigurationError):
         InferenceSettings.from_mapping(config)
