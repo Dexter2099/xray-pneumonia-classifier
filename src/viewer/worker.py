@@ -1,8 +1,10 @@
 """A single worker owns model lifetime; no GUI objects cross this boundary."""
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
+from threading import get_ident
 from time import perf_counter
 
 from PIL import Image
@@ -13,6 +15,8 @@ from src.gradcam import Explainer, GradCamExplainer
 from src.inference import Prediction, PredictionService, Predictor
 from src.inputs import load_image
 from src.settings import InferenceSettings
+from src.viewer.diagnostics import TimelineEvent, inspect_input
+from src.viewer.evidence import VerificationEvidence, load_verification
 
 LOGGER = logging.getLogger(__name__)
 
@@ -55,6 +59,9 @@ class AnalysisWorker(QObject):
     completed = Signal(object)
     failed = Signal(int, str)
     stage = Signal(int, str)
+    inspection_ready = Signal(int, object)
+    timeline_event = Signal(object)
+    verification_loaded = Signal(int, object)
 
     def __init__(
         self,
@@ -68,12 +75,62 @@ class AnalysisWorker(QObject):
         self.model_loads = 0
         self.predictions = 0
 
+    @contextmanager
+    def measured(self, request_id: int, stage: str, detail: str) -> Iterator[None]:
+        started = perf_counter()
+        thread_id = get_ident()
+        self.timeline_event.emit(TimelineEvent(request_id, stage, "Running", 0, thread_id, detail))
+        try:
+            yield
+        except Exception as exc:
+            message = (
+                str(exc)
+                if isinstance(exc, XrayError)
+                else "Operation failed; see application error."
+            )
+            self.timeline_event.emit(
+                TimelineEvent(
+                    request_id, stage, "Failed", perf_counter() - started, thread_id, message
+                )
+            )
+            raise
+        else:
+            self.timeline_event.emit(
+                TimelineEvent(
+                    request_id, stage, "Complete", perf_counter() - started, thread_id, detail
+                )
+            )
+
+    @Slot(int)
+    def read_verification(self, request_id: int = 0) -> None:
+        try:
+            with self.measured(
+                request_id,
+                "Verification report",
+                "load_verification: read saved JSON; no tests executed",
+            ):
+                evidence = load_verification(self.backend.checkpoint_sha256 if self.backend else "")
+        except Exception:
+            LOGGER.exception("Unexpected verification report failure")
+            evidence = VerificationEvidence(
+                "Unavailable",
+                "No usable evidence",
+                "Cannot read verification evidence. Prediction remains available.",
+            )
+        self.verification_loaded.emit(request_id, evidence)
+
     @Slot()
     def initialize(self) -> None:
         self.backend = None
         try:
-            self.backend = self.factory(self.settings)
+            with self.measured(
+                0,
+                "Model load",
+                "create_backend → PredictionService: load trusted weights; evaluation mode",
+            ):
+                self.backend = self.factory(self.settings)
             self.model_loads += 1
+            self.read_verification()
             self.ready.emit(self.backend)
         except XrayError as exc:
             self.failed.emit(0, str(exc))
@@ -86,7 +143,24 @@ class AnalysisWorker(QObject):
     @Slot(int, str)
     def open_image(self, request_id: int, path: str) -> None:
         try:
-            self.image_loaded.emit(request_id, load_image(path))
+            with self.measured(
+                request_id,
+                "Decode / validate",
+                "load_image: bounded PNG/JPEG decoding to 8-bit grayscale",
+            ):
+                image = load_image(path)
+            try:
+                with self.measured(
+                    request_id,
+                    "Input inspection",
+                    "inspect_input → preprocess_image: preview resize and normalisation; separate from prediction",
+                ):
+                    inspection = inspect_input(image)
+                self.inspection_ready.emit(request_id, inspection)
+            except Exception:
+                LOGGER.exception("Input inspection failed; decoded image remains available")
+                self.inspection_ready.emit(request_id, None)
+            self.image_loaded.emit(request_id, image)
         except XrayError as exc:
             self.failed.emit(request_id, str(exc))
         except Exception:
@@ -102,14 +176,24 @@ class AnalysisWorker(QObject):
             return
         try:
             started = perf_counter()
-            prediction = self.backend.predictor.predict(image)
+            with self.measured(
+                request_id,
+                "Prediction",
+                "PredictionService.predict: shared preprocessing + forward + softmax; evaluation mode, gradients disabled",
+            ):
+                prediction = self.backend.predictor.predict(image)
             prediction_seconds = perf_counter() - started
             self.predictions += 1
             self.stage.emit(request_id, "Generating Grad-CAM explanation…")
             started = perf_counter()
             overlay, warning = None, ""
             try:
-                overlay = self.backend.explainer.explain(image)
+                with self.measured(
+                    request_id,
+                    "Grad-CAM",
+                    "GradCamExplainer.explain: separate gradient-enabled forward/backward; scoped hooks cleaned afterwards",
+                ):
+                    overlay = self.backend.explainer.explain(image)
             except XrayError as exc:
                 warning = str(exc)
             except Exception:
