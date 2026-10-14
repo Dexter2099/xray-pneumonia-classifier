@@ -1,0 +1,39 @@
+{
+  "baseline_commit": "fe9c3d2b5fa253f00ca0344c02ddf8ba48d440b6",
+  "checkpoint_sha256": "3bf52f20b36e5e44eea344db660f9394484a31b2218119c89e2ea3d51db2b1b8",
+  "runtime": {
+    "python": "3.11.9",
+    "torch": "2.14.1+cpu",
+    "platform": "Windows-10-10.0.26200-SP0",
+    "processor": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+    "device": "cpu",
+    "threads": 4
+  },
+  "measurement": "Both algorithms use the current runtime, decoded image and warm OS cache; imports and decoding excluded. Not a disk-cold startup benchmark.",
+  "repeats": 7,
+  "model_startup_ms": 135.46240000005128,
+  "legacy_median_ms": 84.79749999992237,
+  "reused_median_ms": 7.907599999953163,
+  "speedup": 10.723544438315622,
+  "gradcam_ms": 30.730599999969854,
+  "model_loads_in_reused_service": 1,
+  "maximum_probability_error": 0.0,
+  "legacy_samples_ms": [
+    85.61319999989792,
+    88.330299999825,
+    80.30729999995856,
+    84.75840000005519,
+    89.70090000002529,
+    80.64549999994597,
+    84.79749999992237
+  ],
+  "reused_samples_ms": [
+    7.900600000084523,
+    7.907599999953163,
+    7.745899999918038,
+    7.76569999993626,
+    7.947300000068935,
+    7.967499999949723,
+    7.9373999999461375
+  ]
+}
