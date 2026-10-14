@@ -1,0 +1,37 @@
+[
+  {
+    "case_id": "high_confidence_pneumonia",
+    "filename": "pneumonia-high-confidence.jpeg",
+    "source_path": "C:\\Users\\User\\Documents\\Project Directories\\xray-pneumonia-classifier\\data\\raw\\chest_xray\\train\\PNEUMONIA\\person1527_bacteria_3989.jpeg",
+    "predicted_label": "PNEUMONIA",
+    "confidence": 0.926027,
+    "normal_probability": 0.073973,
+    "pneumonia_probability": 0.926027,
+    "case_title": "High-confidence pneumonia",
+    "case_description": "Real model output with high pneumonia probability.",
+    "gradcam_quality_score": 0.68865
+  },
+  {
+    "case_id": "normal",
+    "filename": "normal-example.jpeg",
+    "source_path": "C:\\Users\\User\\Documents\\Project Directories\\xray-pneumonia-classifier\\data\\raw\\chest_xray\\train\\NORMAL\\IM-0350-0001.jpeg",
+    "predicted_label": "NORMAL",
+    "confidence": 0.999997,
+    "normal_probability": 0.999997,
+    "pneumonia_probability": 3e-06,
+    "case_title": "Normal X-ray",
+    "case_description": "Real model output for a normal / no-pneumonia case."
+  },
+  {
+    "case_id": "borderline",
+    "filename": "borderline-pneumonia.jpeg",
+    "source_path": "C:\\Users\\User\\Documents\\Project Directories\\xray-pneumonia-classifier\\data\\raw\\chest_xray\\train\\NORMAL\\IM-0178-0001.jpeg",
+    "predicted_label": "PNEUMONIA",
+    "confidence": 0.504544,
+    "normal_probability": 0.495456,
+    "pneumonia_probability": 0.504544,
+    "case_title": "Borderline case",
+    "case_description": "Near the model decision boundary with 50.5% pneumonia probability.",
+    "gradcam_quality_score": 0.165513
+  }
+]

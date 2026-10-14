@@ -6,4 +6,7 @@ __pycache__/
 .env/
 outputs/checkpoints/*.pth
 outputs/visualizations/*.png
+outputs/
 data/
+.superpowers/
+demo-output/

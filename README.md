@@ -50,3 +50,64 @@ You can launch a simple Streamlit interface to test the model on your own images
 pip install -r requirements.txt
 streamlit run app.py
 ```
+
+## Portfolio demo reel
+The Streamlit app includes a portfolio demo mode for recording a short product-style reel. It keeps the project in Streamlit and uses the local trained checkpoint, local demo X-ray samples, and existing evaluation artifacts.
+
+This project is educational portfolio software only. It is not clinical software and must not be used for medical diagnosis.
+
+### Expected local files
+The selector and recorder expect these files to exist locally:
+
+```text
+outputs/checkpoints/best_model.pth
+data/raw/chest_xray/
+```
+
+Generate the three demo cases from real model outputs:
+
+```bash
+python scripts/select_demo_samples.py
+```
+
+The selector scans local X-ray images, runs the trained checkpoint, and writes:
+
+```text
+demo-assets/sample-xrays/demo_samples.json
+demo-assets/sample-xrays/pneumonia-high-confidence.jpeg
+demo-assets/sample-xrays/normal-example.jpeg
+demo-assets/sample-xrays/borderline-pneumonia.jpeg
+```
+
+The high-confidence pneumonia case is selected from real model outputs using both pneumonia probability and Grad-CAM visual quality, so the reel shows a prediction that is also explainable on screen. The borderline case is selected from real model probabilities. It may not be exactly 50%; the metadata records the actual NORMAL and PNEUMONIA probabilities. Grad-CAM highlights model-influential regions, not a clinical diagnosis.
+
+Large datasets and model checkpoints should stay local. Do not commit `data/`, `outputs/`, or large model files.
+
+### Run the app
+```bash
+streamlit run app.py
+```
+
+The demo page supports uploaded images and three built-in real-model cases: high-confidence pneumonia, normal X-ray, and borderline case. It shows the original X-ray, prediction label, confidence score, class probability bars, Grad-CAM overlay, and the confusion matrix when `outputs/visualizations/confusion_matrix.png` exists. Metrics are only shown when a real metrics JSON file exists.
+
+### Record the reel
+Install Playwright's Chromium browser once:
+
+```bash
+python -m playwright install chromium
+```
+
+Then make sure samples are selected and record the demo:
+
+```bash
+python scripts/select_demo_samples.py
+python scripts/record_demo.py
+```
+
+The recorder launches Streamlit on a free local port, walks through all three demo cases in a 1440x900 browser viewport, records with Playwright page-video capture, and writes:
+
+```text
+demo-output/xray-classifier-demo.mp4
+```
+
+If the checkpoint, `demo_samples.json`, or one of the three required sample images is missing, the recorder exits with a clear message telling you to run `python scripts/select_demo_samples.py`.

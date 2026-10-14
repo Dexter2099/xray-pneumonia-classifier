@@ -1,5 +1,6 @@
 import os
 import torch
+import torch.nn.functional as F
 from torchvision import transforms
 from PIL import Image
 
@@ -18,8 +19,8 @@ def predict_image(img, config):
 
     Returns
     -------
-    str
-        Predicted label: 'NORMAL' or 'PNEUMONIA'.
+    dict
+        Prediction payload with label, confidence and class probabilities.
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -49,6 +50,18 @@ def predict_image(img, config):
 
     with torch.no_grad():
         outputs = model(tensor)
-        _, pred = torch.max(outputs, 1)
+        probabilities = F.softmax(outputs, dim=1)[0].detach().cpu()
+        confidence, pred = torch.max(probabilities, 0)
 
-    return "PNEUMONIA" if pred.item() == 1 else "NORMAL"
+    labels = ["NORMAL", "PNEUMONIA"]
+    probability_payload = {
+        label: float(probabilities[index].item())
+        for index, label in enumerate(labels)
+    }
+    predicted_label = labels[int(pred.item())]
+
+    return {
+        "label": predicted_label,
+        "confidence": float(confidence.item()),
+        "probabilities": probability_payload,
+    }
