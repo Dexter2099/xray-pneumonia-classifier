@@ -22,3 +22,5 @@ Ruff and focused mypy checks cover the modernized modules; the repository's olde
 The model's measured test performance is limited: 78.53% accuracy, NORMAL recall 44.44%, PNEUMONIA recall 98.97%. These metrics explain the existing model, not clinical utility. This work does not assess patient overlap, remove dataset leakage, calibrate probabilities or establish medical validity.
 
 The automated desktop run and screenshots verify a real Qt workflow with the trained checkpoint. The human-operated native file dialog, display scaling and interview presentation still deserve a rehearsal on the actual screen.
+
+Remote CI status at handoff: GitHub accepted the branches and workflow file, and repository Actions permissions are enabled. It has not reported an Actions workflow run or check for these commits. All described test/lint/type/audit results were executed locally; remote CI is unverified and the PRs remain draft. Manual workflow dispatch returned HTTP 404 because the workflow is not registered on the default branch. Do not interpret this as a passing remote check or merge solely on that basis.

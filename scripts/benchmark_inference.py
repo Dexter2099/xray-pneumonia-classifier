@@ -11,6 +11,7 @@ import numpy as np
 import torch
 from PIL import Image
 
+from src.errors import XrayError
 from src.gradcam import GradCamExplainer
 from src.inference import PredictionService
 from src.settings import ROOT, InferenceSettings
@@ -19,6 +20,12 @@ from src.settings import ROOT, InferenceSettings
 def benchmark(checkpoint: Path, repeats: int = 7, threads: int = 4) -> dict:
     if repeats < 3 or threads < 1:
         raise ValueError("Use at least three repeats and a positive thread count.")
+    if checkpoint.name != "best_model.pth":
+        raise ValueError("The frozen legacy algorithm requires a checkpoint named best_model.pth.")
+    if torch.cuda.is_available():
+        raise ValueError(
+            "Use the documented CPU-only environment so both algorithms run on the CPU."
+        )
     torch.set_num_threads(threads)
     namespace: dict = {}
     legacy_path = ROOT / "tests/fixtures/legacy_inference.py.txt"
@@ -90,7 +97,10 @@ def main() -> int:
     parser.add_argument("--repeats", type=int, default=7)
     parser.add_argument("--output", type=Path, default=ROOT / "outputs/reports/benchmark.json")
     args = parser.parse_args()
-    report = benchmark(args.checkpoint, args.repeats)
+    try:
+        report = benchmark(args.checkpoint, args.repeats)
+    except (XrayError, OSError, ValueError) as exc:
+        parser.exit(1, f"Benchmark failed: {exc}\n")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(

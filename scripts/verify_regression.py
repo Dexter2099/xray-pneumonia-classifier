@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from src.errors import XrayError
 from src.inference import PredictionService
 from src.settings import ROOT, InferenceSettings
 
@@ -84,7 +85,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         report = verify(args.checkpoint)
-    except (OSError, ValueError) as exc:
+    except (XrayError, OSError, ValueError) as exc:
         parser.exit(1, f"Regression verification failed: {exc}\n")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

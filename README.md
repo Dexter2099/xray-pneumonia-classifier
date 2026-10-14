@@ -16,7 +16,7 @@ py -3.11 -m venv .venv
 .venv\Scripts\python.exe -m src.viewer
 ```
 
-The trusted local state dictionary must exist at `outputs/checkpoints/best_model.pth`. Missing or incompatible checkpoints produce a recoverable message in the viewer; configure the checkpoint in `src/config.yaml`, then use **Reload model**. Checkpoints and datasets are not committed or downloaded automatically.
+The trusted local state dictionary must exist at `outputs/checkpoints/best_model.pth`. Missing or incompatible checkpoints produce a recoverable message in the viewer. Place the checkpoint at the configured location, then use **Reload model**. To change the configuration path or device, edit `src/config.yaml` and restart the viewer. Checkpoints and datasets are not committed or downloaded automatically.
 
 The viewer validates PNG/JPEG files before prediction, displays the original image and explanation, keeps long operations off the GUI thread, and shows prediction timing and model-load counters. Model loading occurs once per session unless explicitly reloaded. A corrupt image clears stale results and leaves the application ready to open another image.
 
