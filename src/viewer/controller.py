@@ -166,6 +166,13 @@ class ViewerController(QObject):
             return
         if request_id == 0:
             self.model_ready = False
+            self.window.hood.set_verification(
+                VerificationEvidence(
+                    "Unavailable",
+                    "No loaded model",
+                    "Model loading failed. Reload the trusted checkpoint before comparing evidence.",
+                )
+            )
         self.window.set_message(message, True)
         self._set_busy(False, "Error - choose another image or reload the model")
 
@@ -180,6 +187,13 @@ class ViewerController(QObject):
             return
         self.model_ready = False
         self.window.clear_result()
+        self.window.hood.set_verification(
+            VerificationEvidence(
+                "Unavailable",
+                "Model reloading",
+                "The previous checkpoint comparison is cleared until loading completes.",
+            )
+        )
         self._set_busy(True, "Loading model...")
         self.initialize_requested.emit()
 

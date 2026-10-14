@@ -191,6 +191,25 @@ def test_verification_failure_does_not_strand_busy_window(viewer, qtbot, monkeyp
     assert timeline(window)[-1].outcome == "Failed"
 
 
+def test_failed_model_reload_clears_previous_checkpoint_comparison(viewer, qtbot):
+    window, controller, *_ = viewer
+    assert window.hood.verification_table.rowCount() == 3
+
+    def fail(settings):
+        raise ModelLoadError("Simulated changed/missing checkpoint")
+
+    controller.worker.factory = fail
+    controller.reload_model()
+    assert window.hood.verification_table.rowCount() == 0
+    assert "Model reloading" in window.hood.verification_status.text()
+    qtbot.waitUntil(lambda: not controller.busy)
+    assert not controller.model_ready
+    assert "No loaded model" in window.hood.verification_status.text()
+    assert window.hood.verification_table.rowCount() == 0
+    assert timeline(window)[-1].stage == "Model load"
+    assert timeline(window)[-1].outcome == "Failed"
+
+
 def test_timeline_is_bounded_and_stale_events_are_ignored(viewer):
     window, controller, *_ = viewer
     window.hood._clear_timeline()
