@@ -24,6 +24,15 @@ Files are limited to 20 MiB and 20 million pixels. Images become 8-bit grayscale
 
 ## Verification and interview walkthrough
 
+The repository's [AI-assisted engineering harness](docs/ai-assisted-development.md) combines `AGENTS.md`, a discoverable maintenance skill, reference fixtures, focused tests and an executable verification command:
+
+```powershell
+.venv\Scripts\python.exe -m scripts.check
+.venv\Scripts\python.exe -m scripts.check --release
+```
+
+The release profile adds trained-model regression, the real desktop workflow, benchmark and dependency audit. It fails on an unsuccessful gate and records what ran in `outputs/verification/checks.json`. See [the maintenance skill](.agents/skills/xray-maintenance/SKILL.md) for selecting checks by the change.
+
 ```powershell
 .venv\Scripts\python.exe -m pytest -q
 .venv\Scripts\python.exe -m pytest -q --run-trained

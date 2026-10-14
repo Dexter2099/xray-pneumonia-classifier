@@ -47,4 +47,4 @@ Open [inference core PR #5](https://github.com/Dexter2099/xray-pneumonia-classif
 
 Say: “I separated model lifetime from individual predictions. The controller receives a small backend contract, which lets me test corrupt-input recovery and UI state without loading the real model in every GUI test. I still run a separate regression against the actual trained checkpoint.”
 
-If asked about AI: “I used local Qwen for bounded drafts, including image handling and the window layout. I reviewed and changed those drafts, then checked their behaviour with regression tests, GUI tests and the real model. I can explain and modify the code.”
+If asked about AI, use the evidence and wording in [AI-assisted development and the harness](ai-assisted-development.md). Show `AGENTS.md`, `.agents/skills/xray-maintenance/SKILL.md` and `python -m scripts.check --release`. Explain that Codex and local Qwen contributed code, while the verification uses explicit contracts, reference results, tests and reviewable diffs. Distinguish automated source review from what you have personally inspected and rehearsed.
