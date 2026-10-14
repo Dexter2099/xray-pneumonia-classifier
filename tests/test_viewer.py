@@ -159,6 +159,44 @@ def test_optional_panel_and_inspector_do_not_trigger_predictions(viewer, qtbot, 
     assert predictor.calls == 0 and len(loads) == 1
 
 
+def test_text_size_changes_all_panels_without_changing_analysis(viewer, qtbot, tmp_path):
+    window, controller, predictor, _, loads = viewer
+    open_valid(qtbot, tmp_path, controller)
+    controller.predict()
+    qtbot.waitUntil(lambda: not controller.busy)
+    prediction = window.prediction_label.text()
+    original_preview = window._preview.cacheKey()
+    original_overlay = window._overlay.cacheKey()
+    window.hood_button.setChecked(True)
+    for mode, points in (("Large", 15), ("Normal", 12)):
+        window.text_size_combo.setCurrentText(mode)
+        qtbot.waitUntil(
+            lambda points=points: window.hood.timeline_table.font().pointSize() == points
+        )
+        assert window.open_button.font().pointSize() == points
+        assert window.hood.input_summary.font().pointSize() == points
+        assert window.hood.verification_detail.font().pointSize() == points
+        assert window.prediction_label.font().pointSize() > points
+        for width, height in ((1024, 720), (1640, 1000)):
+            window.resize(width, height)
+            qtbot.waitUntil(lambda width=width: window.width() == width)
+            assert window.open_button.font().pointSize() == points
+            pixmap = window.image_label.pixmap()
+            assert pixmap.width() <= window.image_label.width()
+            assert pixmap.height() <= window.image_label.height()
+            assert pixmap.width() / pixmap.height() == pytest.approx(320 / 200, abs=0.02)
+        assert window.prediction_label.text() == prediction
+        assert window._preview.cacheKey() == original_preview
+        assert window._overlay.cacheKey() == original_overlay
+    assert predictor.calls == 1 and len(loads) == 1
+    window.hood_dock.setFloating(True)
+    window.text_size_combo.setCurrentText("Large")
+    qtbot.waitUntil(lambda: window.hood.verification_table.font().pointSize() == 15)
+    assert (
+        window.hood.timeline_table.rowHeight(0) >= window.hood.timeline_table.fontMetrics().height()
+    )
+
+
 def test_diagnostic_failure_does_not_block_valid_input_or_prediction(
     viewer, qtbot, tmp_path, monkeypatch
 ):

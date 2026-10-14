@@ -9,6 +9,8 @@ Prepare the trusted checkpoint at `outputs/checkpoints/best_model.pth`. From the
 
 The smoke run creates a deliberately corrupt PNG at `demo-output/viewer/corrupt-example.png`, screenshots and a JSON result. It uses the actual checkpoint and desktop worker; it is an automated workflow check rather than human acceptance of the native interface.
 
+Before presenting, maximize the viewer and choose **Text size → Large** if needed. The control applies to the diagnostic panels as well as the main window. Switching sizes preserves the current image, result and model-load count. Diagnostic tables allow column resizing; long details and compact windows scroll rather than reducing the font.
+
 ## 1. Open an image and show prediction and explanation
 
 Open `demo-assets/sample-xrays/pneumonia-high-confidence.jpeg`, then select **Predict and explain**. Show the prediction, class probabilities and Grad-CAM overlay.
