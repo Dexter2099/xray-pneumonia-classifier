@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import shutil
 import sys
+from pathlib import Path
 
 import numpy as np
-from PIL import Image
-
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -77,46 +75,24 @@ def compute_gradcam_score(model, input_tensor) -> float:
 
 
 def predict_candidates(image_paths: list[Path], config: dict) -> list[dict]:
-    import torch
-    import torch.nn.functional as F
-    from torchvision import transforms
+    from src.inference import PredictionService
+    from src.inputs import load_image, preprocess_image
+    from src.settings import InferenceSettings
 
-    from src.model import SimpleCNN
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = SimpleCNN().to(device)
-    checkpoint_path = Path(config["checkpoint_dir"]) / "best_model.pth"
-    model.load_state_dict(torch.load(checkpoint_path, map_location=device))
-    model.eval()
-    preprocess = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-        transforms.Normalize([0.5], [0.5]),
-    ])
-    labels = ["NORMAL", "PNEUMONIA"]
+    # Selection is another consumer of inference, not a second implementation of it.
+    service = PredictionService(InferenceSettings.from_mapping(config))
 
     candidates = []
     total = len(image_paths)
     for index, image_path in enumerate(image_paths, start=1):
         try:
-            image = Image.open(image_path).convert("L")
-            tensor = preprocess(image).unsqueeze(0).to(device)
-            with torch.no_grad():
-                outputs = model(tensor)
-                probabilities = F.softmax(outputs, dim=1)[0].detach().cpu()
-                confidence, prediction = torch.max(probabilities, 0)
-            predicted_label = labels[int(prediction.item())]
+            image = load_image(image_path)
+            result = service.predict(image).to_dict()
             gradcam_score = None
-            if predicted_label == "PNEUMONIA":
-                gradcam_score = compute_gradcam_score(model, tensor)
-            result = {
-                "label": predicted_label,
-                "confidence": float(confidence.item()),
-                "probabilities": {
-                    label: float(probabilities[label_index].item())
-                    for label_index, label in enumerate(labels)
-                },
-            }
+            if result["label"] == "PNEUMONIA":
+                tensor = preprocess_image(image).unsqueeze(0).to(service.device)
+                with service.lock:
+                    gradcam_score = compute_gradcam_score(service.model, tensor)
         except Exception as exc:
             print(f"[WARN] Skipping {image_path}: {exc}", file=sys.stderr)
             continue
@@ -139,19 +115,16 @@ def predict_candidates(image_paths: list[Path], config: dict) -> list[dict]:
 
 
 def select_best_samples(candidates: list[dict]) -> dict[str, dict]:
-    pneumonia_candidates = [
-        item for item in candidates if item["predicted_label"] == "PNEUMONIA"
-    ]
-    normal_candidates = [
-        item for item in candidates if item["predicted_label"] == "NORMAL"
-    ]
+    pneumonia_candidates = [item for item in candidates if item["predicted_label"] == "PNEUMONIA"]
+    normal_candidates = [item for item in candidates if item["predicted_label"] == "NORMAL"]
     if not pneumonia_candidates:
         raise RuntimeError("No model-predicted PNEUMONIA images found.")
     if not normal_candidates:
         raise RuntimeError("No model-predicted NORMAL images found.")
 
     labelled_pneumonia_candidates = [
-        item for item in pneumonia_candidates
+        item
+        for item in pneumonia_candidates
         if source_has_class_folder(item["source_path"], "PNEUMONIA")
     ]
     high_confidence_pool = labelled_pneumonia_candidates or pneumonia_candidates
@@ -227,20 +200,23 @@ def write_selected_samples(selected: dict[str, dict], sample_dir: Path = SAMPLE_
         shutil.copyfile(candidate["source_path"], destination)
         metadata.append(build_metadata_entry(case_id, candidate, filename))
 
-    METADATA_PATH.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    (sample_dir / "demo_samples.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     return metadata
 
 
 def load_config() -> dict:
-    import yaml
+    from src.settings import load_config as read_config
 
-    with open(ROOT / "src" / "config.yaml", "r") as file:
-        return yaml.safe_load(file)
+    return read_config()
 
 
 def main() -> int:
-    if not CHECKPOINT_PATH.exists():
-        print(f"Missing trained checkpoint: {CHECKPOINT_PATH}", file=sys.stderr)
+    from src.settings import InferenceSettings
+
+    config = load_config()
+    checkpoint_path = InferenceSettings.from_mapping(config).checkpoint_path
+    if not checkpoint_path.exists():
+        print(f"Missing trained checkpoint: {checkpoint_path}", file=sys.stderr)
         return 1
 
     image_paths = discover_images()
@@ -248,7 +224,6 @@ def main() -> int:
         print("No local X-ray images found under data/raw/chest_xray/.", file=sys.stderr)
         return 1
 
-    config = load_config()
     print(f"[INFO] Scoring {len(image_paths)} local X-ray images with the real checkpoint...")
     candidates = predict_candidates(image_paths, config)
     selected = select_best_samples(candidates)

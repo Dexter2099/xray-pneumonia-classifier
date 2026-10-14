@@ -4,3 +4,4 @@ pytest-qt==4.5.0
 ruff==0.17.0
 mypy==2.4.0
 pip-audit==2.10.1
+tqdm==4.70.1

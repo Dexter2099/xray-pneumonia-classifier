@@ -4,12 +4,10 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
-import yaml
-from PIL import Image
+
 from src.errors import XrayError
 from src.inputs import load_image
-from src.settings import InferenceSettings
-
+from src.settings import InferenceSettings, load_config
 
 ROOT = Path(__file__).resolve().parent
 SAMPLE_DIR = ROOT / "demo-assets" / "sample-xrays"
@@ -21,11 +19,6 @@ METRICS_CANDIDATES = [
     ROOT / "outputs" / "metrics.json",
 ]
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg"}
-
-
-def load_config(config_path=ROOT / "src" / "config.yaml"):
-    with open(config_path, "r") as file:
-        return yaml.safe_load(file)
 
 
 def find_demo_samples(sample_dir=SAMPLE_DIR):
@@ -172,7 +165,9 @@ def main():
         else:
             image_col, result_col = st.columns([0.48, 0.52], gap="large")
             with image_col:
-                st.image(image, caption=f"Original X-ray: {image_caption}", use_container_width=True)
+                st.image(
+                    image, caption=f"Original X-ray: {image_caption}", use_container_width=True
+                )
 
             with result_col:
                 if st.button("Run prediction", type="primary", use_container_width=True):
@@ -182,10 +177,14 @@ def main():
                         settings = InferenceSettings.from_mapping(config)
                         stat = settings.checkpoint_path.stat()
                         service = cached_prediction_service(
-                            str(settings.checkpoint_path), stat.st_size, stat.st_mtime_ns,
+                            str(settings.checkpoint_path),
+                            stat.st_size,
+                            stat.st_mtime_ns,
                             settings.device,
                         )
-                        st.session_state["prediction"] = predict_image(image, config, service=service)
+                        st.session_state["prediction"] = predict_image(
+                            image, config, service=service
+                        )
                     except (XrayError, OSError) as exc:
                         st.error(f"Prediction unavailable: {exc}")
                         st.session_state.pop("prediction", None)
@@ -193,7 +192,9 @@ def main():
                         st.session_state.pop("gradcam_error", None)
                         return
                     try:
-                        st.session_state["gradcam_overlay"] = load_or_generate_gradcam(image, config, selected_sample, service)
+                        st.session_state["gradcam_overlay"] = load_or_generate_gradcam(
+                            image, config, selected_sample, service
+                        )
                         st.session_state["gradcam_error"] = None
                     except Exception as exc:
                         st.session_state["gradcam_overlay"] = None
@@ -201,9 +202,15 @@ def main():
 
                 prediction = st.session_state.get("prediction")
                 if prediction:
-                    st.metric("Prediction", prediction["label"], f"{prediction['confidence']:.1%} confidence")
+                    st.metric(
+                        "Prediction",
+                        prediction["label"],
+                        f"{prediction['confidence']:.1%} confidence",
+                    )
                     if selected_sample and selected_sample["case_id"] == "borderline":
-                        st.caption("Borderline model output. This case sits near the model decision boundary.")
+                        st.caption(
+                            "Borderline model output. This case sits near the model decision boundary."
+                        )
                     render_probability_bars(prediction["probabilities"])
                 else:
                     st.caption("Run prediction to show confidence, probabilities, and explanation.")
@@ -213,7 +220,9 @@ def main():
         gradcam_error = st.session_state.get("gradcam_error")
         st.markdown('<div id="model-explanation-anchor"></div>', unsafe_allow_html=True)
         st.markdown("### Model explanation")
-        st.caption("Highlighted regions influenced the model prediction. For normal cases, this is not disease evidence.")
+        st.caption(
+            "Highlighted regions influenced the model prediction. For normal cases, this is not disease evidence."
+        )
         gradcam_cols = st.columns(2, gap="medium")
         gradcam_cols[0].image(image.resize((260, 260)), caption="Original X-ray", width=260)
         if overlay is not None:
@@ -233,7 +242,9 @@ def main():
         st.markdown("### Evaluation artifacts")
         eval_cols = st.columns(2, gap="large")
         if CONFUSION_MATRIX_PATH.exists():
-            eval_cols[0].image(str(CONFUSION_MATRIX_PATH), caption="Confusion matrix", use_container_width=True)
+            eval_cols[0].image(
+                str(CONFUSION_MATRIX_PATH), caption="Confusion matrix", use_container_width=True
+            )
         metrics = load_metrics()
         if metrics:
             with eval_cols[1]:

@@ -11,12 +11,11 @@ from typing import Protocol
 
 import torch
 
+from src.contracts import LABELS as LABELS
 from src.errors import ConfigurationError, ModelLoadError, PredictionError
 from src.inputs import ModelInput, preprocess_image
 from src.model import SimpleCNN
 from src.settings import InferenceSettings
-
-LABELS = ("NORMAL", "PNEUMONIA")
 
 
 @dataclass(frozen=True)

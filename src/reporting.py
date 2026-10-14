@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 from sklearn.metrics import classification_report, confusion_matrix
 
-from src.inference import LABELS
+from src.contracts import LABELS
 
 
 def build_evaluation_report(

@@ -9,12 +9,12 @@ import seaborn as sns
 from src.dataset import ChestXrayDataset
 from src.inference import LABELS, PredictionService
 from src.reporting import build_evaluation_report
-from src.settings import ROOT, InferenceSettings
+from src.settings import InferenceSettings, resolve_project_path
 
 
 def evaluate_model(config):
     settings = InferenceSettings.from_mapping(config)
-    data_dir = (ROOT / Path(config["data_dir"])).resolve()
+    data_dir = resolve_project_path(config["data_dir"], "data_dir")
     batch_size = config.get("batch_size", 32)
     if not isinstance(batch_size, int) or isinstance(batch_size, bool) or batch_size < 1:
         raise ValueError("Evaluation batch_size must be a positive integer.")
@@ -30,7 +30,7 @@ def evaluate_model(config):
         y_true.extend(label for _, label in batch)
         y_pred.extend(LABELS.index(prediction.label) for prediction in predictions)
     report = build_evaluation_report(y_true, y_pred, service.checkpoint_sha256, config)
-    save_dir = (ROOT / Path(config["visualizations_dir"])).resolve()
+    save_dir = resolve_project_path(config["visualizations_dir"], "visualizations_dir")
     save_dir.mkdir(parents=True, exist_ok=True)
     (save_dir / "metrics.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     plot_confusion_matrix(report["confusion_matrix"], save_dir)

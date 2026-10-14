@@ -12,9 +12,9 @@ import torch
 from PIL import Image
 from torchvision import transforms
 
+from src.contracts import IMAGE_SIZE
 from src.errors import ImageInputError
 
-IMAGE_SIZE = 224
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
 MAX_IMAGE_PIXELS = 20_000_000
 ImageSource: TypeAlias = str | Path | bytes | Image.Image

@@ -1,52 +1,73 @@
-import os
+"""Dataset indexing and loading use the same input contract as prediction."""
+
+from collections.abc import Mapping, Sequence
+from pathlib import Path
+
 import torch
-from torchvision import transforms
-from torch.utils.data import Dataset
-from PIL import Image
-import yaml
+from torch.utils.data import DataLoader, Dataset
+
+from src.contracts import IMAGE_SIZE, LABELS
+from src.errors import ConfigurationError
+from src.inputs import preprocess_image
+from src.settings import resolve_project_path, validated_integer
+
 
 class ChestXrayDataset(Dataset):
-    def __init__(self, root_dir, split='train', image_size=224):
-        self.image_paths = []
-        self.labels = []
-        self.transform = transforms.Compose([
-            transforms.Resize((image_size, image_size)),
-            transforms.ToTensor(),
-            transforms.Normalize([0.5], [0.5])  # Normalize grayscale images
-        ])
+    def __init__(self, root_dir: str | Path, split: str = "train", image_size: int = IMAGE_SIZE):
+        # Three pooling layers feed a fixed-size dense layer; resizing to a different
+        # dimension cannot be supported by this checkpoint merely by changing YAML.
+        if image_size != IMAGE_SIZE:
+            raise ConfigurationError("This CNN requires image_size: 224.")
+        if split not in {"train", "val", "test"}:
+            raise ConfigurationError("Dataset split must be train, val, or test.")
+        self.image_paths: list[str] = []
+        self.labels: list[int] = []
+        split_dir = resolve_project_path(root_dir, "data_dir") / split
+        for label_index, label in enumerate(LABELS):
+            label_dir = split_dir / label
+            if not label_dir.is_dir():
+                raise ConfigurationError(f"Dataset directory is missing: {label_dir}")
+            # A seeded shuffle is only reproducible when the underlying index order is stable.
+            for path in sorted(label_dir.iterdir()):
+                if path.is_file() and path.suffix.lower() in {".png", ".jpg", ".jpeg"}:
+                    self.image_paths.append(str(path))
+                    self.labels.append(label_index)
 
-        split_dir = os.path.join(root_dir, split)
-        for label in ['NORMAL', 'PNEUMONIA']:
-            label_dir = os.path.join(split_dir, label)
-            for img_name in os.listdir(label_dir):
-                if img_name.lower().endswith(('.png', '.jpg', '.jpeg')):  # Filter only image files
-                    img_path = os.path.join(label_dir, img_name)
-                    self.image_paths.append(img_path)
-                    self.labels.append(0 if label == 'NORMAL' else 1)
-
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.image_paths)
 
-    def __getitem__(self, idx):
-        img = Image.open(self.image_paths[idx]).convert('L')  # Convert to grayscale
-        img = self.transform(img)
-        label = torch.tensor(self.labels[idx], dtype=torch.long)
-        return img, label
+    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
+        # Keep decoding, grayscale conversion and normalisation identical to inference.
+        # preprocess_image also closes its file before returning the detached tensor.
+        image = preprocess_image(self.image_paths[index])
+        label = torch.tensor(self.labels[index], dtype=torch.long)
+        return image, label
 
-def get_dataloaders(config):
-    data_dir = config['data_dir']
-    batch_size = config['batch_size']
-    image_size = config['image_size']
-    num_workers = config['num_workers']
 
-    train_dataset = ChestXrayDataset(data_dir, 'train', image_size)
-    val_dataset = ChestXrayDataset(data_dir, 'val', image_size)
-    test_dataset = ChestXrayDataset(data_dir, 'test', image_size)
-
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
-
-    return train_loader, val_loader, test_loader
-
-# Sets up the data loading pipeline with transformations and supports train/val/test splits.
+def get_dataloaders(
+    config: Mapping,
+    *,
+    splits: Sequence[str] = ("train", "val", "test"),
+    generator: torch.Generator | None = None,
+) -> tuple[DataLoader, ...]:
+    """Return loaders in requested order; the default retains the original three-loader API."""
+    batch_size = validated_integer(config.get("batch_size", 32), "batch_size")
+    num_workers = validated_integer(config.get("num_workers", 4), "num_workers", 0)
+    if not splits:
+        raise ConfigurationError("Request at least one dataset split.")
+    loaders = []
+    data_dir = resolve_project_path(config.get("data_dir"), "data_dir")
+    for split in splits:
+        dataset = ChestXrayDataset(data_dir, split, config.get("image_size", IMAGE_SIZE))
+        if not len(dataset):
+            raise ConfigurationError(f"The {split} dataset is empty.")
+        loaders.append(
+            DataLoader(
+                dataset,
+                batch_size=batch_size,
+                shuffle=split == "train",
+                num_workers=num_workers,
+                generator=generator,
+            )
+        )
+    return tuple(loaders)
