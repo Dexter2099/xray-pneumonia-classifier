@@ -6,6 +6,9 @@ import pandas as pd
 import streamlit as st
 import yaml
 from PIL import Image
+from src.errors import XrayError
+from src.inputs import load_image
+from src.settings import InferenceSettings
 
 
 ROOT = Path(__file__).resolve().parent
@@ -51,10 +54,10 @@ def render_probability_bars(probabilities):
 
 def load_selected_image(uploaded_file, selected_sample):
     if uploaded_file is not None:
-        return Image.open(uploaded_file).convert("L"), "Uploaded image", None
+        return load_image(uploaded_file.getvalue()), "Uploaded image", None
     if selected_sample is not None:
         path = Path(selected_sample["path"])
-        return Image.open(path).convert("L"), selected_sample["case_title"], selected_sample
+        return load_image(path), selected_sample["case_title"], selected_sample
     return None, None, None
 
 
@@ -75,18 +78,18 @@ def gradcam_cache_path(sample):
     return GRADCAM_OUTPUT_DIR / f"{sample['case_id']}.png"
 
 
-def load_or_generate_gradcam(image, config, sample):
+@st.cache_resource
+def cached_prediction_service(checkpoint_path, checkpoint_size, checkpoint_mtime):
+    from src.inference import PredictionService
+
+    return PredictionService(InferenceSettings(Path(checkpoint_path)))
+
+
+def load_or_generate_gradcam(image, config, sample, service=None):
     from src.gradcam import generate_gradcam_overlay
 
-    cache_path = gradcam_cache_path(sample)
-    if cache_path is not None and cache_path.exists():
-        return Image.open(cache_path).convert("RGB")
-
-    overlay = generate_gradcam_overlay(image, config)
-    if cache_path is not None:
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        overlay.save(cache_path)
-    return overlay
+    # Recompute with the shared model; case-only disk caches can become stale.
+    return generate_gradcam_overlay(image, config, service=service)
 
 
 def main():
@@ -149,7 +152,16 @@ def main():
             st.caption(f"Selected case: {selected_sample['case_title']}")
             st.caption(selected_sample["case_description"])
 
-    image, image_caption, selected_sample = load_selected_image(uploaded_file, selected_sample)
+    try:
+        image, image_caption, selected_sample = load_selected_image(uploaded_file, selected_sample)
+    except XrayError as exc:
+        st.error(str(exc))
+        image, image_caption = None, None
+    input_key = None if image is None else (image.size, image.tobytes())
+    if input_key != st.session_state.get("input_key"):
+        for key in ("prediction", "gradcam_overlay", "gradcam_error"):
+            st.session_state.pop(key, None)
+        st.session_state["input_key"] = input_key
 
     with right:
         st.markdown("### Prediction workflow")
@@ -164,9 +176,19 @@ def main():
                 if st.button("Run prediction", type="primary", use_container_width=True):
                     from src.inference import predict_image
 
-                    st.session_state["prediction"] = predict_image(image, config)
                     try:
-                        st.session_state["gradcam_overlay"] = load_or_generate_gradcam(image, config, selected_sample)
+                        settings = InferenceSettings.from_mapping(config)
+                        stat = settings.checkpoint_path.stat()
+                        service = cached_prediction_service(str(settings.checkpoint_path), stat.st_size, stat.st_mtime_ns)
+                        st.session_state["prediction"] = predict_image(image, config, service=service)
+                    except (XrayError, OSError) as exc:
+                        st.error(f"Prediction unavailable: {exc}")
+                        st.session_state.pop("prediction", None)
+                        st.session_state.pop("gradcam_overlay", None)
+                        st.session_state.pop("gradcam_error", None)
+                        return
+                    try:
+                        st.session_state["gradcam_overlay"] = load_or_generate_gradcam(image, config, selected_sample, service)
                         st.session_state["gradcam_error"] = None
                     except Exception as exc:
                         st.session_state["gradcam_overlay"] = None
