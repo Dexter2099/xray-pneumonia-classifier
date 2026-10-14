@@ -1,6 +1,6 @@
 # AI-assisted development and the engineering harness
 
-This project was built and improved with AI-assisted coding. Codex contributed implementation, tests, integration, automated source review and verification commands. Local Qwen produced bounded drafts for image handling, the desktop window layout, the verification runner and input-inspection snapshots, which were inspected and changed before integration. Dexter set the interview goal, scope and acceptance scenarios. This is not a claim that Dexter manually authored or personally reviewed every line.
+This project was built and improved with AI-assisted coding. Codex contributed implementation, tests, integration, automated source review and verification commands. Local Qwen produced bounded drafts for image handling, the desktop window layout, the verification runner, input-inspection snapshots and readability font roles, which were inspected and changed before integration. Dexter set the interview goal, scope and acceptance scenarios. This is not a claim that Dexter manually authored or personally reviewed every line.
 
 The reusable repository harness was added after the initial viewer implementation to codify the constraints and checks already being used. It should not be presented as a framework that existed from the first commit, a fully autonomous development system, or proof that an agent's decisions are always correct.
 

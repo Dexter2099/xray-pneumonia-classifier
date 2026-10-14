@@ -28,6 +28,8 @@ Select **Under the hood** to open an optional dock with three tabs:
 
 The panel starts hidden, can be closed or detached, and does not trigger model loading or prediction when toggled. Small bounded diagnostics are captured in the worker even while hidden so opening it shows the current input and recent operations. The inspector starts after grayscale decoding; it does not claim to preserve original colour. Stage timings include diagnostics overhead and are separate from the controlled benchmark.
 
+Use **Text size → Normal / Large** for 12-point or 15-point body text throughout the viewer and diagnostic panels. Prediction headings are larger, status/error text has stronger contrast, and tables have adjustable columns and readable row heights. Resizing gives additional space to the images; compact windows and long input-inspector content can scroll. Text-size changes are session-only and do not reload the model or change predictions.
+
 Files are limited to 20 MiB and 20 million pixels. Images become 8-bit grayscale and resize to 224 × 224. Raw tensor inputs must be dense float32, shaped `(1, 224, 224)`, finite and in `[0,1]`; normalisation then maps them to `[-1,1]` once. Configuration paths resolve relative to the repository, independently of the launch directory. The model's two-logit argmax rule is preserved; the old YAML `threshold` value is not used.
 
 ## Verification and interview walkthrough
