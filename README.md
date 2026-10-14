@@ -1,12 +1,58 @@
 # X-ray Pneumonia Classifier
 
 ## Project Overview
-This repository provides a simple convolutional neural network (CNN) built with PyTorch to classify chest X-ray images as **Pneumonia** or **Normal**. The code is meant as an introductory example of medical image analysis and includes utilities for training, evaluation and Grad-CAM visualization.
+This repository demonstrates maintaining an existing scientific Python application: a PyTorch CNN, validated image inputs, a reusable inference service, a responsive PySide6 desktop viewer and Grad-CAM visual explanations. The original model architecture and trained weights are preserved, with independently captured regression results and measured performance improvements.
+
+This is educational portfolio software, not a diagnostic system. Model probabilities are not calibrated clinical confidence, and Grad-CAM highlights model influence rather than disease evidence.
+
+## Desktop viewer
+
+Use Python 3.11. From the repository root, create an isolated environment:
+
+```powershell
+py -3.11 -m venv .venv
+.venv\Scripts\python.exe -m pip install torch==2.14.1 torchvision==0.29.1 --index-url https://download.pytorch.org/whl/cpu
+.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.venv\Scripts\python.exe -m src.viewer
+```
+
+The trusted local state dictionary must exist at `outputs/checkpoints/best_model.pth`. Missing or incompatible checkpoints produce a recoverable message in the viewer; configure the checkpoint in `src/config.yaml`, then use **Reload model**. Checkpoints and datasets are not committed or downloaded automatically.
+
+The viewer validates PNG/JPEG files before prediction, displays the original image and explanation, keeps long operations off the GUI thread, and shows prediction timing and model-load counters. Model loading occurs once per session unless explicitly reloaded. A corrupt image clears stale results and leaves the application ready to open another image.
+
+Files are limited to 20 MiB and 20 million pixels. Images become 8-bit grayscale and resize to 224 × 224. Raw tensor inputs must be dense float32, shaped `(1, 224, 224)`, finite and in `[0,1]`; normalisation then maps them to `[-1,1]` once. Configuration paths resolve relative to the repository, independently of the launch directory. The model's two-logit argmax rule is preserved; the old YAML `threshold` value is not used.
+
+## Verification and interview walkthrough
+
+```powershell
+.venv\Scripts\python.exe -m pytest -q
+.venv\Scripts\python.exe -m pytest -q --run-trained
+.venv\Scripts\python.exe -m scripts.verify_regression
+.venv\Scripts\python.exe -m scripts.benchmark_inference
+.venv\Scripts\python.exe -m scripts.viewer_smoke
+.venv\Scripts\python.exe -m ruff check .
+.venv\Scripts\python.exe -m ruff format --check .
+.venv\Scripts\python.exe -m mypy
+.venv\Scripts\python.exe -m pip_audit -r requirements-viewer.txt
+```
+
+Ordinary tests use synthetic images/checkpoints. `--run-trained` explicitly requires the original local checkpoint and three fingerprinted demo images; a missing or changed checkpoint fails the requested verification. The baseline was captured before refactoring, rather than generated from the new implementation.
+
+The recorded CPU benchmark measured **84.8 ms → 7.9 ms** median prediction time across seven repeats, with identical output probabilities. Both implementations used the current runtime and warm filesystem cache. Model startup was measured separately; timings exclude Python imports and file decoding and will vary by machine.
+
+- [Five-section interview demonstration](docs/interview-demo.md)
+- [Architecture, SOLID boundaries and design decisions](docs/architecture.md)
+- [Verification evidence and limitations](docs/verification.md)
+- [Original-to-refactored prediction regression](docs/evidence/regression.json)
+- [Benchmark measurements](docs/evidence/benchmark.json)
+- [624-image evaluation report](docs/evidence/evaluation.json)
+
+Focused PRs are stacked to preserve existing history: [existing demo baseline #4](https://github.com/Dexter2099/xray-pneumonia-classifier/pull/4), [inference core #5](https://github.com/Dexter2099/xray-pneumonia-classifier/pull/5), then [desktop viewer #6](https://github.com/Dexter2099/xray-pneumonia-classifier/pull/6). Review in that order. Each PR compares against its named base branch.
 
 ## Setup
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/xray-pneumonia-classifier.git
+   git clone https://github.com/Dexter2099/xray-pneumonia-classifier.git
    cd xray-pneumonia-classifier
    ```
 2. Install the required dependencies:

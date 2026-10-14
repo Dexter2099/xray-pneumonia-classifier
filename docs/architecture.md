@@ -1,0 +1,43 @@
+# Design decisions
+
+The existing CNN and its checkpoint remain the scientific baseline. Engineering changes make its inputs, lifetime and failure behaviour explicit. A future model or preprocessing change needs a new scientific validation exercise rather than updating golden expectations to make tests pass.
+
+## Responsibilities and dependencies
+
+| Component | Responsibility |
+|---|---|
+| `src/inputs.py` | Decode bounded PNG/JPEG inputs and produce the model's canonical tensor. |
+| `src/settings.py` | Validate checkpoint/device settings and anchor paths to the repository. |
+| `PredictionService` | Load a trusted state dictionary once, own its device and return typed predictions. |
+| `GradCamExplainer` | Generate an explanation with the existing model and release hooks/graphs. |
+| `AnalysisWorker` | Own a backend in one Qt worker thread and serialize expensive operations. |
+| `ViewerController` | Manage busy/ready/error state and associate results with requests. |
+| `ViewerWindow` | Render pixels and text and emit user actions; it imports no model code. |
+
+## SOLID applied to this application
+
+- **Single responsibility:** image validation, scientific computation, background execution and presentation are separate.
+- **Open/closed:** a backend factory can supply another predictor or explainer without changing the controller's workflow. This is an extension point, not a claim that arbitrary checkpoints are supported.
+- **Liskov substitution:** the real predictor and deterministic test predictor satisfy the same `predict(source) -> Prediction` contract. The GUI workflow tests run through that substituted backend.
+- **Interface segregation:** `Predictor` and `Explainer` are separate small protocols. Prediction does not require an explanation method or GUI dependency.
+- **Dependency inversion:** the worker accepts a backend factory. The controller does not construct a CNN, deserialize weights or implement preprocessing. No dependency-injection framework is needed.
+
+## Why model lifetime belongs to a service
+
+The legacy helper constructed and loaded a model for every image. `PredictionService` has an explicit lifetime and can be reused across predictions and Grad-CAM. The desktop worker creates one service; Streamlit uses a resource cache keyed by checkpoint path/size/modification time. A reentrant lock serializes access when a service is shared. Desktop requests are processed sequentially.
+
+`predict_image` remains a one-shot compatibility adapter. Existing scripts and notebooks keep working; repeated consumers should inject a service or use `service.predict` directly. There is no hidden process-global model cache.
+
+## Why prediction and explanation use different gradient contexts
+
+Prediction uses evaluation mode plus `torch.inference_mode()`. Grad-CAM also uses evaluation mode, but explicitly enables gradients for a separate forward/backward pass. Its hooks exist only inside `generate` and are removed in `finally`; stored tensors and parameter gradients are cleared on success and failure. No graph is retained between explanations.
+
+## Failure and state behaviour
+
+Expected failures use application exceptions. The GUI displays actionable messages. Unexpected failures are caught at the thread boundary so they do not strand a disabled window; diagnostics go to standard logging. Images are never written to logs.
+
+A new image clears the previous prediction and overlay before decoding. Corrupt files leave no stale input/results. Request identifiers reject stale callbacks. Conflicting actions are disabled and checked again by the controller. If Grad-CAM fails, the completed prediction remains visible. Closing during work waits for that operation before the worker thread exits; it never forcibly terminates a PyTorch operation.
+
+## Scope and trade-offs
+
+This is a source-launched desktop application, not a packaged installer. PNG/JPEG and the existing 224 × 224 two-class CNN are supported; DICOM, 16-bit image interpretation, retraining, calibration and dataset-leakage investigation are separate work. Input resizing and normalisation intentionally preserve the existing model's assumptions.
