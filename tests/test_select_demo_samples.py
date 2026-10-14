@@ -145,3 +145,27 @@ def test_sample_metadata_is_written_beside_custom_output_images(tmp_path):
     select_demo_samples.write_selected_samples({"normal": candidate}, output)
     assert (output / "demo_samples.json").is_file()
     assert (output / "normal-example.jpeg").read_bytes() == source.read_bytes()
+
+
+def test_selector_entry_point_uses_configured_dataset_and_checkpoint(tmp_path, monkeypatch):
+    checkpoint = tmp_path / "custom.pth"
+    checkpoint.write_bytes(b"preflight checks existence only")
+    data_dir = tmp_path / "custom-data"
+    monkeypatch.setattr(
+        select_demo_samples,
+        "load_config",
+        lambda: {
+            "checkpoint_path": checkpoint,
+            "data_dir": data_dir,
+        },
+    )
+    searched = []
+    monkeypatch.setattr(
+        select_demo_samples, "discover_images", lambda paths: searched.extend(paths) or []
+    )
+    assert select_demo_samples.main() == 1
+    assert searched == [
+        data_dir / split / label
+        for split in ("test", "val", "train")
+        for label in ("NORMAL", "PNEUMONIA")
+    ]

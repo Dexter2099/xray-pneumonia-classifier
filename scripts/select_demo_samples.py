@@ -1,3 +1,5 @@
+"""Select presentation examples from real outputs without implementing another predictor."""
+
 from __future__ import annotations
 
 import json
@@ -11,7 +13,6 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 SAMPLE_DIR = ROOT / "demo-assets" / "sample-xrays"
-CHECKPOINT_PATH = ROOT / "outputs" / "checkpoints" / "best_model.pth"
 METADATA_PATH = SAMPLE_DIR / "demo_samples.json"
 DATASET_DIRS = [
     ROOT / "data" / "raw" / "chest_xray" / "test" / "NORMAL",
@@ -52,6 +53,7 @@ def discover_images(dataset_dirs: list[Path] = DATASET_DIRS) -> list[Path]:
 
 
 def score_gradcam_quality(cam) -> float:
+    """Presentation heuristic for demo selection, not a measure of clinical validity."""
     cam_array = np.asarray(cam, dtype=np.float32)
     if cam_array.size == 0:
         return 0.0
@@ -211,7 +213,8 @@ def load_config() -> dict:
 
 
 def main() -> int:
-    from src.settings import InferenceSettings
+    from src.contracts import LABELS
+    from src.settings import InferenceSettings, resolve_project_path
 
     config = load_config()
     checkpoint_path = InferenceSettings.from_mapping(config).checkpoint_path
@@ -219,9 +222,12 @@ def main() -> int:
         print(f"Missing trained checkpoint: {checkpoint_path}", file=sys.stderr)
         return 1
 
-    image_paths = discover_images()
+    data_dir = resolve_project_path(config["data_dir"], "data_dir")
+    image_paths = discover_images(
+        [data_dir / split / label for split in ("test", "val", "train") for label in LABELS]
+    )
     if not image_paths:
-        print("No local X-ray images found under data/raw/chest_xray/.", file=sys.stderr)
+        print(f"No local X-ray images found under {data_dir}.", file=sys.stderr)
         return 1
 
     print(f"[INFO] Scoring {len(image_paths)} local X-ray images with the real checkpoint...")
