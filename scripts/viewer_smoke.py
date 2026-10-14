@@ -49,22 +49,42 @@ def main() -> int:
             raise RuntimeError(window.message_label.text())
         if not window.hood_dock.isHidden():
             raise RuntimeError("Diagnostics must be optional and hidden initially")
+        window.resize(1360, 940)
         sample = ROOT / "demo-assets/sample-xrays/pneumonia-high-confidence.jpeg"
         controller.open_image(str(sample))
         wait(lambda: not controller.busy)
         for _ in range(2):
+            if results:
+                window.text_size_combo.setCurrentText("Large")
             controller.predict()
             wait(lambda: not controller.busy)
         if window._overlay is None or "PNEUMONIA" not in window.prediction_label.text():
             raise RuntimeError("The real prediction or Grad-CAM overlay is missing")
         app.processEvents()
-        window.grab().save(str(args.output / "prediction.png"))
-        window.resize(1640, 900)
-        window.hood_button.setChecked(True)
-        for index, name in enumerate(("input-inspector", "execution-timeline", "verification")):
-            window.hood.tabs.setCurrentIndex(index)
+        for mode in ("Normal", "Large"):
+            window.text_size_combo.setCurrentText(mode)
             app.processEvents()
-            window.grab().save(str(args.output / f"{name}.png"))
+            window.grab().save(str(args.output / f"prediction-{mode.lower()}.png"))
+        window.grab().save(str(args.output / "prediction.png"))
+        window.showMaximized()
+        app.processEvents()
+        window.grab().save(str(args.output / "prediction-maximized-large.png"))
+        window.showNormal()
+        window.resize(1640, 1000)
+        window.hood_button.setChecked(True)
+        for mode in ("Normal", "Large"):
+            window.text_size_combo.setCurrentText(mode)
+            for index, name in enumerate(("input-inspector", "execution-timeline", "verification")):
+                window.hood.tabs.setCurrentIndex(index)
+                app.processEvents()
+                window.grab().save(str(args.output / f"{name}-{mode.lower()}.png"))
+                window.grab().save(str(args.output / f"{name}.png"))
+        window.showMaximized()
+        window.hood.tabs.setCurrentIndex(2)
+        app.processEvents()
+        window.grab().save(str(args.output / "verification-maximized-large.png"))
+        window.showNormal()
+        window.resize(1640, 1000)
         if sum(window.hood.histogram.counts) != 224 * 224:
             raise RuntimeError("Input inspector did not show the canonical tensor histogram")
         if window.hood.verification_table.rowCount() != 3:
@@ -78,6 +98,10 @@ def main() -> int:
             raise RuntimeError("Corrupt input was not handled cleanly")
         if window.hood.histogram.counts:
             raise RuntimeError("Corrupt input left stale inspection data")
+        for mode in ("Normal", "Large"):
+            window.text_size_combo.setCurrentText(mode)
+            app.processEvents()
+            window.grab().save(str(args.output / f"corrupt-input-{mode.lower()}.png"))
         window.grab().save(str(args.output / "corrupt-input.png"))
         controller.open_image(str(sample))
         wait(lambda: not controller.busy)
@@ -101,6 +125,7 @@ def main() -> int:
             "execution_stages_displayed": window.hood.timeline_table.rowCount(),
             "verification_cases_displayed": window.hood.verification_table.rowCount(),
             "diagnostics_preserve_predictions": True,
+            "normal_large_text_preserve_predictions": True,
         }
         (args.output / "smoke.json").write_text(json.dumps(report, indent=2) + "\n")
         print(json.dumps(report))

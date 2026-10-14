@@ -1,7 +1,8 @@
 from PIL import Image
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QCloseEvent, QImage, QPixmap
+from PySide6.QtCore import QEvent, QObject, Qt, Signal
+from PySide6.QtGui import QCloseEvent, QFont, QImage, QPixmap
 from PySide6.QtWidgets import (
+    QComboBox,
     QDockWidget,
     QFileDialog,
     QFrame,
@@ -9,6 +10,8 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -25,12 +28,18 @@ class ViewerWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("X-ray Analysis Viewer")
-        self.resize(1120, 760)
+        available = self.screen().availableGeometry()
+        self.resize(min(1360, available.width() - 64), min(940, available.height() - 64))
         self._preview: QPixmap | None = None
         self._overlay: QPixmap | None = None
 
         central_widget = QWidget()
-        self.setCentralWidget(central_widget)
+        central_widget.setObjectName("viewer_content")
+        self.main_scroll = QScrollArea()
+        self.main_scroll.setWidgetResizable(True)
+        self.main_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.main_scroll.setWidget(central_widget)
+        self.setCentralWidget(self.main_scroll)
         main_layout = QVBoxLayout(central_widget)
         main_layout.setContentsMargins(20, 20, 20, 20)
         main_layout.setSpacing(15)
@@ -65,9 +74,20 @@ class ViewerWindow(QMainWindow):
         toolbar_layout.addWidget(self.retry_button)
         self.hood_button = QPushButton("Under the hood")
         self.hood_button.setCheckable(True)
-        toolbar_layout.addWidget(self.hood_button)
         toolbar_layout.addStretch()
         main_layout.addLayout(toolbar_layout)
+        tools_layout = QHBoxLayout()
+        tools_layout.addWidget(self.hood_button)
+        tools_layout.addStretch()
+        text_size_label = QLabel("Text size:")
+        self.text_size_combo = QComboBox()
+        self.text_size_combo.addItems(["Normal", "Large"])
+        self.text_size_combo.setAccessibleName("Text size")
+        self.text_size_combo.setToolTip("Change text throughout the viewer and diagnostic panels")
+        text_size_label.setBuddy(self.text_size_combo)
+        tools_layout.addWidget(text_size_label)
+        tools_layout.addWidget(self.text_size_combo)
+        main_layout.addLayout(tools_layout)
 
         images_frame = QFrame()
         images_frame.setObjectName("panel")
@@ -79,25 +99,31 @@ class ViewerWindow(QMainWindow):
         left_title = QLabel("Original image")
         left_title.setObjectName("panel_title")
         self.image_label = QLabel()
-        self.image_label.setMinimumSize(360, 300)
+        self.image_label.setMinimumSize(260, 200)
+        self.image_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+        self.image_label.setWordWrap(True)
+        self.image_label.installEventFilter(self)
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.image_label.setObjectName("image_box")
         left_container.addWidget(left_title)
-        left_container.addWidget(self.image_label)
+        left_container.addWidget(self.image_label, 1)
 
         right_container = QVBoxLayout()
         right_title = QLabel("Grad-CAM explanation")
         right_title.setObjectName("panel_title")
         self.overlay_label = QLabel()
-        self.overlay_label.setMinimumSize(360, 300)
+        self.overlay_label.setMinimumSize(260, 200)
+        self.overlay_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+        self.overlay_label.setWordWrap(True)
+        self.overlay_label.installEventFilter(self)
         self.overlay_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.overlay_label.setObjectName("image_box")
         right_container.addWidget(right_title)
-        right_container.addWidget(self.overlay_label)
+        right_container.addWidget(self.overlay_label, 1)
 
         images_layout.addLayout(left_container, 1)
         images_layout.addLayout(right_container, 1)
-        main_layout.addWidget(images_frame)
+        main_layout.addWidget(images_frame, 1)
 
         results_frame = QFrame()
         results_frame.setObjectName("panel")
@@ -108,7 +134,7 @@ class ViewerWindow(QMainWindow):
         self.prediction_label = QLabel("Prediction: -")
         self.prediction_label.setWordWrap(True)
         self.prediction_label.setTextFormat(Qt.TextFormat.PlainText)
-        self.prediction_label.setObjectName("result_text")
+        self.prediction_label.setObjectName("prediction_text")
 
         self.probabilities_label = QLabel("Probabilities: -")
         self.probabilities_label.setWordWrap(True)
@@ -123,7 +149,7 @@ class ViewerWindow(QMainWindow):
         self.session_label = QLabel("Session: -")
         self.session_label.setWordWrap(True)
         self.session_label.setTextFormat(Qt.TextFormat.PlainText)
-        self.session_label.setObjectName("result_text")
+        self.session_label.setObjectName("session_text")
 
         self.message_label = QLabel("")
         self.message_label.setWordWrap(True)
@@ -152,41 +178,70 @@ class ViewerWindow(QMainWindow):
         self.hood_dock.setWidget(self.hood)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.hood_dock)
         self.hood_dock.hide()
-        self.hood_button.toggled.connect(self.hood_dock.setVisible)
+        self.hood_button.toggled.connect(self._toggle_hood)
         self.hood_dock.visibilityChanged.connect(self.hood_button.setChecked)
 
-        self.setStyleSheet(self._build_stylesheet())
+        self.text_size_combo.currentIndexChanged.connect(self._apply_text_size)
+        self._apply_text_size(0)
         self.set_preview(None)
         self.set_overlay(None)
 
-    def _build_stylesheet(self):
-        return """
-            QMainWindow { background-color: #111827; }
-            QDockWidget { color: #f3f4f6; background-color: #1f2937; }
-            QDockWidget::title { padding: 8px; background-color: #1f2937; }
-            QTabWidget::pane { border: 1px solid #374151; background-color: #1f2937; }
-            QTabBar::tab { background: #111827; padding: 8px; }
-            QTabBar::tab:selected { color: #2dd4bf; background: #1f2937; }
-            QTableWidget, QPlainTextEdit { background: #111827; color: #d1d5db; border: 1px solid #374151; }
-            QHeaderView::section { background: #374151; color: #f3f4f6; padding: 4px; }
-            QWidget { color: #f3f4f6; font-family: 'Segoe UI', sans-serif; }
-            QFrame#panel { background-color: #1f2937; border: 1px solid #374151; border-radius: 8px; }
-            QLabel#title { font-size: 20px; font-weight: bold; color: #f3f4f6; }
-            QLabel#subtitle { font-size: 13px; color: #9ca3af; }
-            QLabel#edu { font-size: 11px; color: #6b7280; font-style: italic; }
-            QLabel#panel_title { font-size: 14px; font-weight: bold; color: #e5e7eb; margin-bottom: 5px; }
-            QLabel#image_box { background-color: #111827; border: 1px solid #374151; border-radius: 4px; }
-            QLabel#result_text { font-size: 13px; color: #d1d5db; }
-            QLabel#message_text { font-size: 13px; color: #9ca3af; }
-            QLabel#status_text { font-size: 12px; color: #6b7280; }
-            QPushButton { background-color: #1f2937; color: #f3f4f6; border: 1px solid #374151; border-radius: 6px; padding: 8px 16px; font-size: 13px; }
-            QPushButton:hover { background-color: #374151; }
-            QPushButton:pressed { background-color: #111827; }
-            QPushButton#primary { background-color: #2dd4bf; color: #111827; font-weight: bold; border: none; }
-            QPushButton#primary:hover { background-color: #14b8a6; }
-            QPushButton#primary:disabled { background-color: #374151; color: #6b7280; }
-            QPushButton#secondary { background-color: transparent; border: 1px solid #2dd4bf; color: #2dd4bf; }
-            QPushButton#secondary:hover { background-color: #2dd4bf; color: #111827; }
+    def _apply_text_size(self, index: int) -> None:
+        large = index == 1
+        font = QFont(self.font())
+        font.setPointSize(15 if large else 12)
+        self.setFont(font)
+        self.hood.setFont(font)
+        self.setStyleSheet(self._build_stylesheet(large))
+        self.hood.refresh_text_layout()
+        if self.hood_dock.isVisible() and not self.hood_dock.isFloating():
+            self._size_hood()
+
+    def _toggle_hood(self, visible: bool) -> None:
+        self.hood_dock.setVisible(visible)
+        if visible:
+            self._size_hood()
+
+    def _size_hood(self) -> None:
+        content = self.main_scroll.widget()
+        if content is None:
+            return
+        desired = max(560, self.hood.verification_table.horizontalHeader().length() + 60)
+        available = max(480, self.width() - content.minimumSizeHint().width())
+        self.resizeDocks([self.hood_dock], [min(desired, available)], Qt.Orientation.Horizontal)
+
+    def _build_stylesheet(self, large: bool = False):
+        # Local Qwen drafted the font roles; review kept the existing palette and button hierarchy.
+        body, heading, panel, small = (15, 24, 16, 14) if large else (12, 20, 13, 11)
+        return f"""
+            QMainWindow, QScrollArea {{ background-color: #111827; }}
+            QWidget {{ color: #e2e8f0; font-family: 'Segoe UI', sans-serif; font-size: {body}pt; }}
+            QWidget#viewer_content, QWidget#inspector_content {{ background-color: #111827; }}
+            QDockWidget {{ color: #f3f4f6; background-color: #1f2937; }}
+            QDockWidget::title {{ padding: 8px; background-color: #1f2937; }}
+            QTabWidget::pane {{ border: 1px solid #374151; background-color: #1f2937; }}
+            QTabBar::tab {{ background: #111827; padding: 8px; }}
+            QTabBar::tab:selected {{ color: #2dd4bf; background: #1f2937; }}
+            QTableWidget, QPlainTextEdit {{ background: #111827; color: #e2e8f0; border: 1px solid #374151; selection-background-color: #374151; }}
+            QHeaderView::section {{ background: #374151; color: #f3f4f6; padding: 6px; }}
+            QFrame#panel {{ background-color: #1f2937; border: 1px solid #374151; border-radius: 8px; }}
+            QLabel#title, QLabel#prediction_text {{ font-size: {heading}pt; font-weight: bold; color: #f3f4f6; }}
+            QLabel#subtitle, QLabel#message_text, QLabel#status_text {{ color: #cbd5e1; }}
+            QLabel#edu {{ font-size: {small}pt; color: #cbd5e1; }}
+            QLabel#panel_title {{ font-size: {panel}pt; font-weight: bold; color: #e5e7eb; margin-bottom: 5px; }}
+            QLabel#image_box {{ background-color: #111827; border: 1px solid #374151; border-radius: 4px; }}
+            QLabel#session_text {{ font-weight: bold; }}
+            QPushButton, QComboBox {{ background-color: #1f2937; color: #f3f4f6; border: 1px solid #64748b; border-radius: 6px; padding: 8px 16px; }}
+            QPushButton:hover {{ background-color: #374151; }}
+            QPushButton:pressed {{ background-color: #111827; }}
+            QPushButton:checked {{ border-color: #2dd4bf; }}
+            QPushButton:disabled {{ color: #94a3b8; background-color: #374151; border-color: #374151; }}
+            QPushButton#primary {{ background-color: #2dd4bf; color: #111827; font-weight: bold; border: none; }}
+            QPushButton#primary:hover {{ background-color: #14b8a6; }}
+            QPushButton#primary:disabled {{ background-color: #374151; color: #94a3b8; }}
+            QPushButton#secondary {{ background-color: transparent; border: 1px solid #2dd4bf; color: #2dd4bf; }}
+            QPushButton#secondary:hover {{ background-color: #2dd4bf; color: #111827; }}
+            QComboBox QAbstractItemView {{ background: #1f2937; color: #f3f4f6; selection-background-color: #374151; }}
         """
 
     def _on_open_clicked(self):
@@ -243,16 +298,26 @@ class ViewerWindow(QMainWindow):
     def set_message(self, message: str, error: bool = False):
         self.message_label.setText(message)
         if error:
-            self.message_label.setStyleSheet("color: #ef4444;")
+            self.message_label.setStyleSheet("color: #fca5a5;")
         else:
-            self.message_label.setStyleSheet("color: #9ca3af;")
+            self.message_label.setStyleSheet("color: #cbd5e1;")
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if event.type() == QEvent.Type.Resize:
+            if watched is self.image_label and self._preview is not None:
+                self.image_label.setPixmap(self._scale_pixmap(self._preview, self.image_label))
+            elif watched is self.overlay_label and self._overlay is not None:
+                self.overlay_label.setPixmap(self._scale_pixmap(self._overlay, self.overlay_label))
+        return super().eventFilter(watched, event)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        if self._preview is not None:
-            self.image_label.setPixmap(self._scale_pixmap(self._preview, self.image_label))
-        if self._overlay is not None:
-            self.overlay_label.setPixmap(self._scale_pixmap(self._overlay, self.overlay_label))
+        if (
+            hasattr(self, "hood_dock")
+            and self.hood_dock.isVisible()
+            and not self.hood_dock.isFloating()
+        ):
+            self._size_hood()
 
     def closeEvent(self, event: QCloseEvent):
         self.closing.emit(event)

@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -42,8 +43,10 @@ def table(headers: list[str]) -> QTableWidget:
     widget.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
     widget.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
     widget.verticalHeader().hide()
-    widget.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+    widget.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+    widget.horizontalHeader().setDefaultSectionSize(150)
     widget.horizontalHeader().setStretchLastSection(True)
+    widget.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
     return widget
 
 
@@ -79,12 +82,13 @@ class UnderTheHood(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setMinimumWidth(460)
+        self.setMinimumWidth(480)
         layout = QVBoxLayout(self)
         self.tabs = QTabWidget()
         layout.addWidget(self.tabs)
 
         input_page = QWidget()
+        input_page.setObjectName("inspector_content")
         input_layout = QVBoxLayout(input_page)
         input_layout.addWidget(
             text_label(
@@ -120,7 +124,10 @@ class UnderTheHood(QWidget):
             )
         )
         input_layout.addStretch()
-        self.tabs.addTab(input_page, "Input inspector")
+        self.input_scroll = QScrollArea()
+        self.input_scroll.setWidgetResizable(True)
+        self.input_scroll.setWidget(input_page)
+        self.tabs.addTab(self.input_scroll, "Input inspector")
 
         timeline_page = QWidget()
         timeline_layout = QVBoxLayout(timeline_page)
@@ -131,6 +138,10 @@ class UnderTheHood(QWidget):
             )
         )
         self.timeline_table = table(["Request", "Stage", "Outcome", "ms", "Worker thread"])
+        self.timeline_table.setColumnWidth(1, 220)
+        self.timeline_table.horizontalHeader().sectionResized.connect(
+            self.timeline_table.resizeRowsToContents
+        )
         timeline_layout.addWidget(self.timeline_table)
         self.timeline_detail = text_label("Select a stage to see its responsibility.")
         timeline_layout.addWidget(self.timeline_detail)
@@ -146,18 +157,20 @@ class UnderTheHood(QWidget):
         verification_layout.addWidget(self.verification_status)
         self.verification_detail = QPlainTextEdit()
         self.verification_detail.setReadOnly(True)
-        self.verification_detail.setMaximumHeight(235)
+        self.verification_detail.setMinimumHeight(160)
+        self.verification_detail.setMaximumHeight(260)
         verification_layout.addWidget(self.verification_detail)
         verification_layout.addWidget(text_label("N = NORMAL · P = PNEUMONIA"))
         self.verification_table = table(["Case", "Expected", "Recorded", "Max |Δ|", "Result"])
-        self.verification_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch
+        self.verification_table.horizontalHeader().setStretchLastSection(False)
+        self.verification_table.horizontalHeader().sectionResized.connect(
+            self.verification_table.resizeRowsToContents
         )
         verification_layout.addWidget(self.verification_table)
         verification_layout.addWidget(
             text_label(
                 "Generate fresh local evidence in a terminal:\npython -m scripts.verify_regression\n"
-                "Then refresh. Missing Git identity, dirty code or another revision is labelled historical."
+                "Refresh reads the report; it does not run tests."
             )
         )
         self.refresh_button = QPushButton("Refresh saved report")
@@ -165,6 +178,24 @@ class UnderTheHood(QWidget):
         verification_layout.addWidget(self.refresh_button)
         self.tabs.addTab(verification_page, "Verification")
         self.set_inspection(None)
+
+    def refresh_text_layout(self) -> None:
+        """Keep rows readable when the inherited text size changes."""
+        for widget in (self.timeline_table, self.verification_table):
+            widget.ensurePolished()
+            height = widget.fontMetrics().height() + 14
+            widget.verticalHeader().setMinimumSectionSize(height)
+            widget.verticalHeader().setDefaultSectionSize(height)
+            widget.resizeRowsToContents()
+        self.timeline_table.resizeColumnsToContents()
+        self._size_verification_columns()
+
+    def _size_verification_columns(self) -> None:
+        self.verification_table.resizeColumnsToContents()
+        self.verification_table.setColumnWidth(
+            0, self.verification_table.fontMetrics().height() * 6
+        )
+        self.verification_table.resizeRowsToContents()
 
     @staticmethod
     def _preview(label: QLabel, image: Image.Image | None) -> None:
@@ -231,8 +262,10 @@ class UnderTheHood(QWidget):
         for column, value in enumerate(values):
             item = QTableWidgetItem(value)
             item.setData(Qt.ItemDataRole.UserRole, event)
-            item.setToolTip(event.detail)
+            item.setToolTip(f"{value}\n{event.detail}")
             widget.setItem(row, column, item)
+        if widget.rowCount() <= 2:
+            widget.resizeColumnsToContents()
         widget.scrollToBottom()
 
     def _select_stage(self) -> None:
@@ -265,4 +298,4 @@ class UnderTheHood(QWidget):
                     f"Recorded actual {case.actual_label}: {case.actual}"
                 )
                 self.verification_table.setItem(row, column, item)
-        self.verification_table.resizeRowsToContents()
+        self._size_verification_columns()
