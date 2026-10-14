@@ -47,7 +47,7 @@ def inspect_input(image: Image.Image) -> InputInspection:
     return InputInspection(
         image.size,
         preview,
-        Image.fromarray(display.numpy()),
+        Image.fromarray(display.numpy()).copy(),
         tuple(tensor.shape),
         str(tensor.dtype),
         float(tensor.min()),
