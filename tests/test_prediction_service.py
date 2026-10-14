@@ -1,3 +1,4 @@
+import hashlib
 from unittest.mock import patch
 
 import pytest
@@ -68,3 +69,39 @@ def test_invalid_model_output_and_empty_batches_fail(checkpoint):
         with pytest.raises(PredictionError, match="invalid scores"):
             service.predict(Image.new("L", (224, 224)))
     assert service.prediction_count == 0
+
+
+def test_fingerprint_identifies_loaded_snapshot_when_checkpoint_is_replaced(checkpoint, tmp_path):
+    path = tmp_path / "replaceable.pth"
+    original = checkpoint.read_bytes()
+    path.write_bytes(original)
+    real_load = torch.load
+
+    def replace_after_load(*args, **kwargs):
+        weights = real_load(*args, **kwargs)
+        path.write_bytes(b"a different checkpoint now occupies the same path")
+        return weights
+
+    with patch("src.inference.torch.load", side_effect=replace_after_load):
+        service = PredictionService(InferenceSettings(path, "cpu"))
+    assert service.checkpoint_sha256 == hashlib.sha256(original).hexdigest()
+    assert service.checkpoint_sha256 != hashlib.sha256(path.read_bytes()).hexdigest()
+    expected = PredictionService(InferenceSettings(checkpoint, "cpu"))
+    image = Image.new("L", (224, 224), 80)
+    assert service.predict(image) == expected.predict(image)
+
+
+@pytest.mark.parametrize("operation", ["stack", "transfer", "forward"])
+def test_runtime_failures_are_actionable_and_service_can_recover(checkpoint, operation):
+    service = PredictionService(InferenceSettings(checkpoint, "cpu"))
+    target = {
+        "stack": "src.inference.torch.stack",
+        "transfer": "torch.Tensor.to",
+        "forward": "src.model.SimpleCNN.forward",
+    }[operation]
+    with patch(target, side_effect=RuntimeError("simulated allocation/device failure")):
+        with pytest.raises(PredictionError, match="smaller batch"):
+            service.predict(Image.new("L", (224, 224)))
+    assert service.prediction_count == 0
+    assert service.predict(Image.new("L", (224, 224))).label in {"NORMAL", "PNEUMONIA"}
+    assert service.prediction_count == 1

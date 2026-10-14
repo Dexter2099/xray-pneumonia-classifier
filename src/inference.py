@@ -1,6 +1,7 @@
 """Reusable, UI-independent prediction service and legacy one-shot adapter."""
 
 import hashlib
+import io
 import pickle
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -60,12 +61,14 @@ class PredictionService:
                 "Model checkpoint was not found. Configure best_model.pth and reload the model."
             )
         try:
-            weights = torch.load(settings.checkpoint_path, map_location="cpu", weights_only=True)
+            # Hash and deserialize one snapshot: a concurrent file replacement must not
+            # make the displayed fingerprint identify weights this service never loaded.
+            with io.BytesIO(settings.checkpoint_path.read_bytes()) as snapshot:
+                self.checkpoint_sha256 = hashlib.sha256(snapshot.getbuffer()).hexdigest()
+                weights = torch.load(snapshot, map_location="cpu", weights_only=True)
             self.model = SimpleCNN()
             self.model.load_state_dict(weights, strict=True)
             self.model.to(self.device).eval()
-            with settings.checkpoint_path.open("rb") as stream:
-                self.checkpoint_sha256 = hashlib.file_digest(stream, "sha256").hexdigest()
         except (
             OSError,
             RuntimeError,
@@ -86,9 +89,13 @@ class PredictionService:
     def predict_batch(self, sources: Sequence[ModelInput]) -> list[Prediction]:
         if not sources:
             raise PredictionError("Provide at least one image for prediction.")
-        tensors = torch.stack([preprocess_image(source) for source in sources]).to(self.device)
         with self.lock, torch.inference_mode():
             try:
+                # Allocation and device transfer can fail before the forward pass.
+                # Keep them inside the same recoverable prediction-error boundary.
+                tensors = torch.stack([preprocess_image(source) for source in sources]).to(
+                    self.device
+                )
                 outputs = self.model(tensors)
                 if (
                     outputs.shape != (len(sources), len(LABELS))

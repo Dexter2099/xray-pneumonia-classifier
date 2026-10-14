@@ -79,10 +79,12 @@ def gradcam_cache_path(sample):
 
 
 @st.cache_resource
-def cached_prediction_service(checkpoint_path, checkpoint_size, checkpoint_mtime):
+def cached_prediction_service(checkpoint_path, checkpoint_size, checkpoint_mtime, device):
     from src.inference import PredictionService
 
-    return PredictionService(InferenceSettings(Path(checkpoint_path)))
+    # File metadata invalidates replaced weights; device is also part of model identity.
+    # Dropping it here would silently override an explicit CPU/CUDA configuration.
+    return PredictionService(InferenceSettings(Path(checkpoint_path), device))
 
 
 def load_or_generate_gradcam(image, config, sample, service=None):
@@ -179,7 +181,10 @@ def main():
                     try:
                         settings = InferenceSettings.from_mapping(config)
                         stat = settings.checkpoint_path.stat()
-                        service = cached_prediction_service(str(settings.checkpoint_path), stat.st_size, stat.st_mtime_ns)
+                        service = cached_prediction_service(
+                            str(settings.checkpoint_path), stat.st_size, stat.st_mtime_ns,
+                            settings.device,
+                        )
                         st.session_state["prediction"] = predict_image(image, config, service=service)
                     except (XrayError, OSError) as exc:
                         st.error(f"Prediction unavailable: {exc}")
