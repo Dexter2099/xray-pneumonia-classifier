@@ -41,6 +41,8 @@ The original prediction helper reloaded the checkpoint for every image. Before c
 
 The window layout draft also required correction during review: clearing a QLabel's text after assigning its pixmap cleared the image, and the offscreen Windows renderer needed a font for readable screenshots. Source review and an actual rendered run caught problems that a plausible-looking code draft alone did not establish were absent.
 
+In the later SOLID/readability pass, local Qwen suggested bounded comments for the CNN and Grad-CAM. Review retained the fixed-dimension/logit and hook-cleanup explanations, corrected the gradient-context wording and discarded inaccurate suggestions about batch normalization and OpenCV input requirements. Codex implemented the contract fixes and explanatory comments, then ran the tests and trained regression. The comments describe decisions; their presence alone is not evidence that behavior is correct.
+
 For the optional input inspector, local Qwen drafted a small snapshot module. Review corrected an unsupported histogram argument combination, a sample-standard-deviation calculation labelled as population standard deviation, and an unbounded source preview. Known-pixel tests verify the corrected statistics and display reconstruction. The inference tensor and historical scientific fixtures were not changed to accommodate diagnostics.
 
 ## Interview wording
