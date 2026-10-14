@@ -1,6 +1,7 @@
 """Reusable, UI-independent prediction service and legacy one-shot adapter."""
 
 import hashlib
+import io
 import pickle
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -10,12 +11,11 @@ from typing import Protocol
 
 import torch
 
+from src.contracts import LABELS as LABELS
 from src.errors import ConfigurationError, ModelLoadError, PredictionError
 from src.inputs import ModelInput, preprocess_image
 from src.model import SimpleCNN
 from src.settings import InferenceSettings
-
-LABELS = ("NORMAL", "PNEUMONIA")
 
 
 @dataclass(frozen=True)
@@ -37,7 +37,11 @@ class Prediction:
 
 
 class Predictor(Protocol):
-    """Small prediction dependency; test doubles implement this contract too."""
+    """Accept canonical raw inputs and return class probabilities or an XrayError.
+
+    This narrow contract lets the worker use a deterministic substitute in tests
+    without requiring that substitute to load weights or generate explanations.
+    """
 
     def predict(self, source: ModelInput) -> Prediction: ...
 
@@ -48,6 +52,8 @@ class PredictionService:
     def __init__(self, settings: InferenceSettings) -> None:
         started = perf_counter()
         self.settings = settings
+        # Grad-CAM attaches hooks and changes gradients on this same model. A shared
+        # reentrant lock prevents its temporary state from overlapping prediction.
         self.lock = RLock()
         self.prediction_count = 0
         self.model_load_count = 0
@@ -60,12 +66,16 @@ class PredictionService:
                 "Model checkpoint was not found. Configure best_model.pth and reload the model."
             )
         try:
-            weights = torch.load(settings.checkpoint_path, map_location="cpu", weights_only=True)
+            # Hash and deserialize one snapshot: a concurrent file replacement must not
+            # make the displayed fingerprint identify weights this service never loaded.
+            with io.BytesIO(settings.checkpoint_path.read_bytes()) as snapshot:
+                self.checkpoint_sha256 = hashlib.sha256(snapshot.getbuffer()).hexdigest()
+                weights = torch.load(snapshot, map_location="cpu", weights_only=True)
             self.model = SimpleCNN()
             self.model.load_state_dict(weights, strict=True)
+            # Evaluation mode controls dropout; inference_mode below independently
+            # controls autograd. Grad-CAM will need evaluation mode WITH gradients.
             self.model.to(self.device).eval()
-            with settings.checkpoint_path.open("rb") as stream:
-                self.checkpoint_sha256 = hashlib.file_digest(stream, "sha256").hexdigest()
         except (
             OSError,
             RuntimeError,
@@ -86,9 +96,13 @@ class PredictionService:
     def predict_batch(self, sources: Sequence[ModelInput]) -> list[Prediction]:
         if not sources:
             raise PredictionError("Provide at least one image for prediction.")
-        tensors = torch.stack([preprocess_image(source) for source in sources]).to(self.device)
         with self.lock, torch.inference_mode():
             try:
+                # Allocation and device transfer can fail before the forward pass.
+                # Keep them inside the same recoverable prediction-error boundary.
+                tensors = torch.stack([preprocess_image(source) for source in sources]).to(
+                    self.device
+                )
                 outputs = self.model(tensors)
                 if (
                     outputs.shape != (len(sources), len(LABELS))
@@ -104,6 +118,7 @@ class PredictionService:
                 ) from exc
             results = []
             for row in probabilities:
+                # Keep the original two-logit decision rule and fixed class order.
                 index = int(row.argmax().item())
                 results.append(
                     Prediction(LABELS[index], float(row[index]), float(row[0]), float(row[1]))

@@ -1,17 +1,18 @@
+"""Record the optional web demo using a local server and a managed browser lifecycle."""
+
 from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import shutil
 import socket
 import subprocess
 import sys
 import tempfile
 import time
+from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
-
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = ROOT / "demo-output"
@@ -47,9 +48,7 @@ def find_demo_samples(sample_dir: Path = SAMPLE_DIR) -> list[dict]:
     by_case = {sample.get("case_id"): sample for sample in samples}
     missing = [case_id for case_id in REQUIRED_CASE_IDS if case_id not in by_case]
     if missing:
-        raise RuntimeError(
-            f"Missing demo metadata case(s): {', '.join(missing)}. {rerun_message}"
-        )
+        raise RuntimeError(f"Missing demo metadata case(s): {', '.join(missing)}. {rerun_message}")
     ordered = []
     for case_id in REQUIRED_CASE_IDS:
         sample = by_case[case_id]
@@ -136,7 +135,9 @@ def find_ffmpeg() -> str:
     return imageio_ffmpeg.get_ffmpeg_exe()
 
 
-def build_ffmpeg_command(input_video: Path, output_video: Path, ffmpeg_executable: str) -> list[str]:
+def build_ffmpeg_command(
+    input_video: Path, output_video: Path, ffmpeg_executable: str
+) -> list[str]:
     return [
         ffmpeg_executable,
         "-y",
@@ -157,7 +158,9 @@ def build_ffmpeg_command(input_video: Path, output_video: Path, ffmpeg_executabl
 def convert_to_mp4(raw_video_path: Path, output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     command = build_ffmpeg_command(raw_video_path, output_path, find_ffmpeg())
-    subprocess.run(command, cwd=ROOT, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(
+        command, cwd=ROOT, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
 
 
 def scroll_to_model_explanation(page, pause_ms: int = 5_000) -> None:

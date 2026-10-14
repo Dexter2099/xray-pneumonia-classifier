@@ -12,11 +12,13 @@ from PySide6.QtCore import QObject, Signal, Slot
 
 from src.errors import XrayError
 from src.gradcam import Explainer, GradCamExplainer
-from src.inference import Prediction, PredictionService, Predictor
+from src.inference import PredictionService, Predictor
 from src.inputs import load_image
 from src.settings import InferenceSettings
 from src.viewer.diagnostics import TimelineEvent, inspect_input
 from src.viewer.evidence import VerificationEvidence, load_verification
+from src.viewer.messages import AnalysisResult as AnalysisResult
+from src.viewer.messages import ModelReady
 
 LOGGER = logging.getLogger(__name__)
 
@@ -39,18 +41,6 @@ def create_backend(settings: InferenceSettings) -> AnalysisBackend:
         service.load_seconds,
         str(service.device),
     )
-
-
-@dataclass(frozen=True)
-class AnalysisResult:
-    request_id: int
-    prediction: Prediction
-    overlay: Image.Image | None
-    warning: str
-    prediction_seconds: float
-    explanation_seconds: float
-    model_loads: int
-    predictions: int
 
 
 class AnalysisWorker(QObject):
@@ -77,6 +67,7 @@ class AnalysisWorker(QObject):
 
     @contextmanager
     def measured(self, request_id: int, stage: str, detail: str) -> Iterator[None]:
+        """Pair Running with Complete/Failed while preserving the operation's exception."""
         started = perf_counter()
         thread_id = get_ident()
         self.timeline_event.emit(TimelineEvent(request_id, stage, "Running", 0, thread_id, detail))
@@ -131,7 +122,17 @@ class AnalysisWorker(QObject):
                 self.backend = self.factory(self.settings)
             self.model_loads += 1
             self.read_verification()
-            self.ready.emit(self.backend)
+            # A queued signal transfers metadata, not permission for the GUI to touch
+            # the shared model or read mutable worker counters across threads.
+            self.ready.emit(
+                ModelReady(
+                    self.backend.checkpoint_sha256,
+                    self.backend.load_seconds,
+                    self.backend.device,
+                    self.model_loads,
+                    self.predictions,
+                )
+            )
         except XrayError as exc:
             self.failed.emit(0, str(exc))
         except Exception:
@@ -158,6 +159,7 @@ class AnalysisWorker(QObject):
                     inspection = inspect_input(image)
                 self.inspection_ready.emit(request_id, inspection)
             except Exception:
+                # Diagnostics explain a valid image; their failure must not reject it.
                 LOGGER.exception("Input inspection failed; decoded image remains available")
                 self.inspection_ready.emit(request_id, None)
             self.image_loaded.emit(request_id, image)
@@ -187,6 +189,8 @@ class AnalysisWorker(QObject):
             self.stage.emit(request_id, "Generating Grad-CAM explanation…")
             started = perf_counter()
             overlay, warning = None, ""
+            # Explanation is optional enrichment. Its failure must not erase an
+            # already completed prediction or increment the prediction count again.
             try:
                 with self.measured(
                     request_id,

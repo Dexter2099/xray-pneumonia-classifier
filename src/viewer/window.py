@@ -1,3 +1,5 @@
+"""Render analysis snapshots and emit user intent; all widgets stay on the GUI thread."""
+
 from PIL import Image
 from PySide6.QtCore import QEvent, QObject, Qt, Signal
 from PySide6.QtGui import QCloseEvent, QFont, QImage, QPixmap
@@ -16,6 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from src.viewer.messages import AnalysisResult, ModelReady
 from src.viewer.panels import UnderTheHood
 
 
@@ -254,6 +257,7 @@ class ViewerWindow(QMainWindow):
         width, height = rgb_image.size
         data = rgb_image.tobytes()
         qimage = QImage(data, width, height, width * 3, QImage.Format.Format_RGB888)
+        # QImage can borrow Python's byte buffer; own the pixels before that buffer dies.
         return QPixmap.fromImage(qimage.copy())
 
     def _scale_pixmap(self, pixmap: QPixmap, target_widget: QLabel) -> QPixmap:
@@ -275,6 +279,7 @@ class ViewerWindow(QMainWindow):
             self.image_label.setText("Open a PNG or JPEG image")
             return
         self._preview = self._pil_to_pixmap(image)
+        # Retain full-resolution pixels so repeated resizes never rescale a scaled copy.
         self.image_label.setPixmap(self._scale_pixmap(self._preview, self.image_label))
 
     def set_overlay(self, image: Image.Image | None):
@@ -294,6 +299,41 @@ class ViewerWindow(QMainWindow):
         self.message_label.setText("")
         self.status_label.setText("Status: Ready")
         self.set_overlay(None)
+
+    def set_actions_enabled(self, *, available: bool, can_predict: bool) -> None:
+        self.open_button.setEnabled(available)
+        self.retry_button.setEnabled(available)
+        self.hood.refresh_button.setEnabled(available)
+        self.predict_button.setEnabled(can_predict)
+
+    def set_status(self, status: str) -> None:
+        self.status_label.setText(status)
+
+    def show_model_ready(self, ready: ModelReady) -> None:
+        self.session_label.setText(
+            f"Model loads: {ready.model_loads}  |  Predictions: {ready.predictions}  |  Device: {ready.device}"
+        )
+        self.timing_label.setText(f"Model startup: {ready.load_seconds * 1000:.1f} ms")
+        self.set_message(f"Checkpoint SHA-256: {ready.checkpoint_sha256[:16]}...")
+
+    def show_analysis_result(self, result: AnalysisResult) -> None:
+        prediction = result.prediction
+        self.prediction_label.setText(f"Prediction: {prediction.label}")
+        self.probabilities_label.setText(
+            f"Model probabilities - NORMAL: {prediction.normal_probability:.2%}  |  PNEUMONIA: {prediction.pneumonia_probability:.2%}"
+        )
+        self.timing_label.setText(
+            f"Prediction: {result.prediction_seconds * 1000:.1f} ms  |  Grad-CAM: {result.explanation_seconds * 1000:.1f} ms"
+        )
+        self.session_label.setText(
+            f"Model loads: {result.model_loads}  |  Predictions: {result.predictions}"
+        )
+        self.set_overlay(result.overlay)
+        self.set_message(
+            result.warning
+            or "Highlighted regions influenced this model output; they are not a diagnosis.",
+            bool(result.warning),
+        )
 
     def set_message(self, message: str, error: bool = False):
         self.message_label.setText(message)

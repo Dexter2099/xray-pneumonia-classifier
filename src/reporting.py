@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 from sklearn.metrics import classification_report, confusion_matrix
 
-from src.inference import LABELS
+from src.contracts import LABELS
 
 
 def build_evaluation_report(
@@ -17,6 +17,8 @@ def build_evaluation_report(
     if any(label not in (0, 1) for label in [*y_true, *y_pred]):
         raise ValueError("Evaluation labels must be NORMAL=0 or PNEUMONIA=1.")
     counts = Counter(y_true)
+    # Supply both labels explicitly: a split with one class must still produce the
+    # same two-row report/matrix, in checkpoint order rather than observed-label order.
     return {
         "created_utc": datetime.now(UTC).isoformat(),
         "checkpoint_sha256": checkpoint_sha256,

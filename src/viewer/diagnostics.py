@@ -44,6 +44,7 @@ def inspect_input(image: Image.Image) -> InputInspection:
     preview.thumbnail((224, 224))
     display = ((tensor[0] + 1) * 127.5).round().clamp(0, 255).to(torch.uint8)
     counts, _ = torch.histogram(tensor, bins=16, range=(-1.0, 1.0))
+    # Describe this complete image population, rather than estimating a sample variance.
     return InputInspection(
         image.size,
         preview,

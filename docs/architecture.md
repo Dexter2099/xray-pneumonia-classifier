@@ -8,14 +8,17 @@ The existing CNN and its checkpoint remain the scientific baseline. Engineering 
 |---|---|
 | `src/inputs.py` | Decode bounded PNG/JPEG inputs and produce the model's canonical tensor. |
 | `src/settings.py` | Validate checkpoint/device settings and anchor paths to the repository. |
+| `src/contracts.py` | Name the fixed checkpoint dimensions and class order without importing PyTorch. |
+| `TrainingSettings` / `ChestXrayDataset` | Validate training choices, index requested splits deterministically and reuse canonical preprocessing. |
 | `PredictionService` | Load a trusted state dictionary once, own its device and return typed predictions. |
 | `GradCamExplainer` | Generate an explanation with the existing model and release hooks/graphs. |
 | `AnalysisWorker` | Own a backend in one Qt worker thread and serialize expensive operations. |
 | `ViewerController` | Manage busy/ready/error state and associate results with requests. |
 | `ViewerWindow` | Render pixels and text and emit user actions; it imports no model code. |
+| `ModelReady` / `AnalysisResult` | Carry readiness metadata and completed results to the GUI; the backend stays in the worker. |
 | `InputInspection` / `TimelineEvent` | Small detached snapshots and actual operation events; no retained tensors or graphs. |
 | `UnderTheHood` | Optional dock rendering input statistics, worker events and saved evidence. |
-| `read_evidence` | Bound JSON input, compare saved expectations/tolerances with the frozen baseline, recompute differences and label provenance. |
+| `read_evidence` | Coordinate bounded JSON reads, pure comparison validation and provenance presentation. |
 
 ## SOLID applied to this application
 
@@ -27,7 +30,9 @@ The existing CNN and its checkpoint remain the scientific baseline. Engineering 
 
 ## Why model lifetime belongs to a service
 
-The legacy helper constructed and loaded a model for every image. `PredictionService` has an explicit lifetime and can be reused across predictions and Grad-CAM. The desktop worker creates one service; Streamlit uses a resource cache keyed by checkpoint path/size/modification time. A reentrant lock serializes access when a service is shared. Desktop requests are processed sequentially.
+The legacy helper constructed and loaded a model for every image. `PredictionService` has an explicit lifetime and can be reused across predictions and Grad-CAM. The desktop worker creates one service; Streamlit uses a resource cache keyed by checkpoint path/size/modification time and requested device. A reentrant lock serializes access when a service is shared. Desktop requests are processed sequentially.
+
+Checkpoint loading hashes and deserializes the same in-memory snapshot. Reopening the path after loading could identify replacement bytes instead of the active weights. This costs one checkpoint-sized temporary buffer during startup; repeated predictions do not read or hash the file. The hash identifies bytes and does not establish that an arbitrary checkpoint is trustworthy. Loading retains `weights_only=True` and strict state-dictionary compatibility.
 
 `predict_image` remains a one-shot compatibility adapter. Existing scripts and notebooks keep working; repeated consumers should inject a service or use `service.predict` directly. There is no hidden process-global model cache.
 
@@ -40,6 +45,18 @@ Prediction uses evaluation mode plus `torch.inference_mode()`. Grad-CAM also use
 Expected failures use application exceptions. The GUI displays actionable messages. Unexpected failures are caught at the thread boundary so they do not strand a disabled window; diagnostics go to standard logging. Images are never written to logs.
 
 A new image clears the previous prediction and overlay before decoding. Corrupt files leave no stale input/results. Request identifiers reject stale callbacks. Conflicting actions are disabled and checked again by the controller. If Grad-CAM fails, the completed prediction remains visible. Closing during work waits for that operation before the worker thread exits; it never forcibly terminates a PyTorch operation.
+
+The controller makes state decisions; window methods own label formatting and action-widget updates. The worker emits a frozen `ModelReady` snapshot instead of exposing its backend or requiring the GUI to read mutable counters. Prediction's recoverable error boundary includes preprocessing allocation, tensor stacking and device transfer as well as the forward pass.
+
+## Training and entry-point contracts
+
+CLI, training, evaluation, Streamlit and demo selection share repository-relative configuration paths. Training validates the fixed image size, device, positive batch/epoch/learning-rate values, non-negative worker count/weight decay, supported optimizer and seed range before data/model work. An unknown optimizer fails explicitly. Both Adam and SGD honor configured weight decay.
+
+Training requests only train and validation loaders. The default `get_dataloaders` API still returns train/validation/test loaders for existing consumers. The index uses fixed class order and sorted filenames; image tensors come from the same `preprocess_image` function as inference. Seeded Python, NumPy, PyTorch and loader sampling improve repeatability within a runtime, without promising bitwise equality across hardware or library versions. These fixes affect future training; the demo checkpoint has not been retrained.
+
+## Reading and maintaining the Python code
+
+Comments explain checkpoint assumptions, gradient/lifetime decisions, thread ownership, recovery and evidence limits. Shape annotations remain beside CNN pooling steps to make tensor flow visible. Names and small helpers carry routine mechanics; comments should explain a constraint or trade-off rather than repeat an assignment. For a source walkthrough, read `contracts.py` → `inputs.py` → `inference.py` → `gradcam.py`, then `viewer/messages.py` → `worker.py` → `controller.py` → `window.py`. Evidence validation and presentation are separate helpers behind `read_evidence`.
 
 ## Optional diagnostics preserve the inference boundary
 

@@ -21,6 +21,8 @@ def normalize_cam(cam: np.ndarray, epsilon: float = 1e-8) -> np.ndarray:
     cam = cam - np.min(cam)
     maximum = float(np.max(cam))
     if maximum <= epsilon:
+        # A constant map contains no localisation information. Returning zeros lets
+        # the explainer report that honestly instead of dividing by zero or inventing contrast.
         return np.zeros_like(cam, dtype=np.float32)
     return (cam / maximum).astype(np.float32)
 
@@ -48,6 +50,8 @@ class GradCAM:
         try:
             handles.append(self.target_layer.register_forward_hook(forward_hook))
             handles.append(self.target_layer.register_full_backward_hook(backward_hook))
+            # eval() disables dropout but does not disable autograd. Override any
+            # enclosing inference context for this separate explanation pass only.
             with torch.inference_mode(False), torch.enable_grad():
                 output = self.model(input_tensor.detach().clone())
                 index = int(output[0].argmax().item()) if class_idx is None else class_idx
@@ -64,11 +68,15 @@ class GradCAM:
                 gradients = self.gradients[0].detach().cpu().numpy()
                 activations = self.activations[0].detach().cpu().numpy()
                 weights = gradients.mean(axis=(1, 2))
+                # Spatially averaged gradients weight each channel's influence on
+                # the selected logit; ReLU retains positive contributions only.
                 cam = np.maximum((weights[:, None, None] * activations).sum(axis=0), 0)
                 return normalize_cam(cv2.resize(cam, (224, 224)))
         except RuntimeError as exc:
             raise ExplanationError("Grad-CAM could not compute gradients for this image.") from exc
         finally:
+            # Hooks otherwise survive on the shared model and retain later graphs.
+            # Failure paths need the same cleanup as successful explanations.
             for handle in handles:
                 handle.remove()
             self.gradients = None
@@ -77,6 +85,8 @@ class GradCAM:
 
 
 class Explainer(Protocol):
+    """Return an RGB explanation or an actionable XrayError; prediction is independent."""
+
     def explain(self, image: ImageSource) -> Image.Image: ...
 
 
@@ -93,6 +103,7 @@ class GradCamExplainer:
             raise ExplanationError("No usable heatmap signal. The prediction is still available.")
         grayscale = np.asarray(decoded.resize((224, 224)))
         heatmap = cv2.applyColorMap(np.uint8(255 * cam), cv2.COLORMAP_JET)
+        # OpenCV uses BGR while PIL/Qt expect RGB; blend in one colour space, then convert.
         overlay = cv2.addWeighted(cv2.cvtColor(grayscale, cv2.COLOR_GRAY2BGR), 0.6, heatmap, 0.4, 0)
         return Image.fromarray(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
 

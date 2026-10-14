@@ -87,6 +87,8 @@ python main.py --mode train
 ```
 Model checkpoints are saved to `outputs/checkpoints/`.
 
+Training now validates configuration before data/model work, rejects unsupported image sizes and optimizer names, honors weight decay for both Adam and SGD, and seeds Python/NumPy/PyTorch and loader sampling. It requires only train and validation data; final evaluation uses the held-out test split separately. Configured paths resolve from the repository even when launched elsewhere. These changes affect future training and do not retrain or replace the existing demo checkpoint.
+
 ## Evaluation
 After training, evaluate the model:
 ```bash

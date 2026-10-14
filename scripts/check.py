@@ -110,6 +110,8 @@ def main():
         result = run_check(name, argv, env, ROOT)
         results.append(result)
         if result["exit_code"] != 0:
+            # Stop at the failed gate and record omissions explicitly; an unrun
+            # trained regression or audit must never appear to have passed.
             passed = False
             exit_status = result["exit_code"] if result["exit_code"] > 0 else 1
             not_run = [check[0] for check in checks_to_run[index + 1 :]]
