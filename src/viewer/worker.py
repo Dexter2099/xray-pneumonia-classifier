@@ -67,6 +67,7 @@ class AnalysisWorker(QObject):
 
     @contextmanager
     def measured(self, request_id: int, stage: str, detail: str) -> Iterator[None]:
+        """Pair Running with Complete/Failed while preserving the operation's exception."""
         started = perf_counter()
         thread_id = get_ident()
         self.timeline_event.emit(TimelineEvent(request_id, stage, "Running", 0, thread_id, detail))
@@ -158,6 +159,7 @@ class AnalysisWorker(QObject):
                     inspection = inspect_input(image)
                 self.inspection_ready.emit(request_id, inspection)
             except Exception:
+                # Diagnostics explain a valid image; their failure must not reject it.
                 LOGGER.exception("Input inspection failed; decoded image remains available")
                 self.inspection_ready.emit(request_id, None)
             self.image_loaded.emit(request_id, image)
@@ -187,6 +189,8 @@ class AnalysisWorker(QObject):
             self.stage.emit(request_id, "Generating Grad-CAM explanation…")
             started = perf_counter()
             overlay, warning = None, ""
+            # Explanation is optional enrichment. Its failure must not erase an
+            # already completed prediction or increment the prediction count again.
             try:
                 with self.measured(
                     request_id,

@@ -21,6 +21,8 @@ ImageSource: TypeAlias = str | Path | bytes | Image.Image
 ModelInput: TypeAlias = ImageSource | torch.Tensor
 _ALLOWED_MODES = {"L", "RGB", "RGBA", "1", "P"}
 _NORMALIZE = transforms.Normalize([0.5], [0.5])
+# Preserve the original resize/ToTensor order and torchvision defaults: seemingly
+# cosmetic preprocessing changes can alter the trained model's numerical outputs.
 _IMAGE_TRANSFORM = transforms.Compose(
     [
         transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
@@ -91,6 +93,8 @@ def preprocess_image(source: ModelInput) -> torch.Tensor:
             IMAGE_SIZE,
         ):
             raise ImageInputError("Tensor must be float32 with shape (1, 224, 224).")
+        # Own a copy so validation/normalisation cannot mutate a caller's tensor or
+        # keep the caller's training graph alive through the inference service.
         tensor = source.detach().cpu().clone()
         if not torch.isfinite(tensor).all():
             raise ImageInputError("Tensor contains NaN or infinite values.")

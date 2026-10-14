@@ -1,18 +1,21 @@
 """The optional web consumer must respect device selection and model reuse."""
 
+import importlib
 from unittest.mock import patch
 
 import pytest
 
 pytest.importorskip("streamlit", reason="Install requirements.txt for the optional web UI")
 
-from app import cached_prediction_service
+cached_prediction_service = importlib.import_module("app").cached_prediction_service
 
 
 def test_cache_reuses_same_model_but_separates_device_and_checkpoint_identity(tmp_path):
     cached_prediction_service.clear()
     try:
-        with patch("src.inference.PredictionService", side_effect=lambda settings: object()) as build:
+        with patch(
+            "src.inference.PredictionService", side_effect=lambda settings: object()
+        ) as build:
             path = str(tmp_path / "model.pth")
             first = cached_prediction_service(path, 100, 1, "cpu")
             assert cached_prediction_service(path, 100, 1, "cpu") is first

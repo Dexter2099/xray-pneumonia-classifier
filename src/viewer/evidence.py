@@ -31,6 +31,7 @@ class VerificationEvidence:
 
 
 def _read(path: Path) -> dict:
+    # Bound the read itself, not just a prior stat: the file may grow between calls.
     with path.open("rb") as stream:
         data = stream.read(MAX_REPORT_BYTES + 1)
     if len(data) > MAX_REPORT_BYTES:
@@ -60,6 +61,7 @@ def _validate_comparisons(report: dict, baseline: dict) -> tuple[tuple[EvidenceC
     """Pure validation: a saved PASS is accepted only when the frozen comparisons agree."""
     if report["checkpoint_sha256"] != baseline["checkpoint_sha256"]:
         raise ValueError("Evidence checkpoint differs from the frozen baseline.")
+    # The saved run cannot choose more permissive tolerances or new expected outputs.
     if any(
         report[key] != baseline[key]
         for key in ("baseline_commit", "absolute_tolerance", "relative_tolerance")

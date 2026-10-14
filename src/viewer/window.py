@@ -257,6 +257,7 @@ class ViewerWindow(QMainWindow):
         width, height = rgb_image.size
         data = rgb_image.tobytes()
         qimage = QImage(data, width, height, width * 3, QImage.Format.Format_RGB888)
+        # QImage can borrow Python's byte buffer; own the pixels before that buffer dies.
         return QPixmap.fromImage(qimage.copy())
 
     def _scale_pixmap(self, pixmap: QPixmap, target_widget: QLabel) -> QPixmap:
@@ -278,6 +279,7 @@ class ViewerWindow(QMainWindow):
             self.image_label.setText("Open a PNG or JPEG image")
             return
         self._preview = self._pil_to_pixmap(image)
+        # Retain full-resolution pixels so repeated resizes never rescale a scaled copy.
         self.image_label.setPixmap(self._scale_pixmap(self._preview, self.image_label))
 
     def set_overlay(self, image: Image.Image | None):

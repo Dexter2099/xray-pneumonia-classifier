@@ -1,3 +1,5 @@
+"""Dispatch training, final evaluation and Grad-CAM with the same configuration policy."""
+
 import argparse
 
 from src.settings import InferenceSettings, load_config, resolve_project_path

@@ -37,7 +37,11 @@ class Prediction:
 
 
 class Predictor(Protocol):
-    """Small prediction dependency; test doubles implement this contract too."""
+    """Accept canonical raw inputs and return class probabilities or an XrayError.
+
+    This narrow contract lets the worker use a deterministic substitute in tests
+    without requiring that substitute to load weights or generate explanations.
+    """
 
     def predict(self, source: ModelInput) -> Prediction: ...
 
@@ -48,6 +52,8 @@ class PredictionService:
     def __init__(self, settings: InferenceSettings) -> None:
         started = perf_counter()
         self.settings = settings
+        # Grad-CAM attaches hooks and changes gradients on this same model. A shared
+        # reentrant lock prevents its temporary state from overlapping prediction.
         self.lock = RLock()
         self.prediction_count = 0
         self.model_load_count = 0
@@ -67,6 +73,8 @@ class PredictionService:
                 weights = torch.load(snapshot, map_location="cpu", weights_only=True)
             self.model = SimpleCNN()
             self.model.load_state_dict(weights, strict=True)
+            # Evaluation mode controls dropout; inference_mode below independently
+            # controls autograd. Grad-CAM will need evaluation mode WITH gradients.
             self.model.to(self.device).eval()
         except (
             OSError,
@@ -110,6 +118,7 @@ class PredictionService:
                 ) from exc
             results = []
             for row in probabilities:
+                # Keep the original two-logit decision rule and fixed class order.
                 index = int(row.argmax().item())
                 results.append(
                     Prediction(LABELS[index], float(row[index]), float(row[0]), float(row[1]))

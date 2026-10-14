@@ -20,6 +20,8 @@ def verify(checkpoint: Path, threads: int = 4) -> dict:
     revision, dirty = source_state(ROOT)
     torch.set_num_threads(threads)
     baseline = json.loads((ROOT / "tests/fixtures/trained_baseline.json").read_text())
+    # Independent historical expectations detect behavior changes. Never replace
+    # them with today's outputs merely because a cleanup no longer agrees.
     service = PredictionService(InferenceSettings(checkpoint, "cpu"))
     if service.checkpoint_sha256 != baseline["checkpoint_sha256"]:
         raise ValueError("Checkpoint does not match the independently captured baseline.")
@@ -48,6 +50,8 @@ def verify(checkpoint: Path, threads: int = 4) -> dict:
                 "actual": actual,
             }
         )
+    # Batch kernels can differ numerically; verify them against individual calls
+    # using the same frozen tolerances, rather than assuming vectorisation is harmless.
     singles = [service.predict(path) for path in sources]
     batches = service.predict_batch(sources)
     batch_agrees = all(

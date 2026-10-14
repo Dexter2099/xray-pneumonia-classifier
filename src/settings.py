@@ -1,4 +1,4 @@
-"""Validated inference settings; relative paths are anchored to the repository."""
+"""Validated application settings; every entry point uses repository-relative paths."""
 
 import math
 from collections.abc import Mapping

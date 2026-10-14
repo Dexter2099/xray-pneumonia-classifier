@@ -15,4 +15,5 @@ def source_state(root: Path) -> tuple[str | None, bool | None]:
         except (OSError, subprocess.TimeoutExpired):
             values.append(None)
     revision, status = values
+    # Unknown cleanliness is distinct from clean: missing Git must not upgrade evidence.
     return revision, None if status is None else bool(status)

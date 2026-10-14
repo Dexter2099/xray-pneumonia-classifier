@@ -1,3 +1,5 @@
+"""Optional Streamlit adapter around the shared prediction and explanation services."""
+
 import json
 import os
 from pathlib import Path
@@ -153,6 +155,8 @@ def main():
         st.error(str(exc))
         image, image_caption = None, None
     input_key = None if image is None else (image.size, image.tobytes())
+    # Streamlit reruns this function on interaction; bind saved results to the
+    # decoded pixels so a new upload never inherits an earlier image's prediction.
     if input_key != st.session_state.get("input_key"):
         for key in ("prediction", "gradcam_overlay", "gradcam_error"):
             st.session_state.pop(key, None)
@@ -197,6 +201,8 @@ def main():
                         )
                         st.session_state["gradcam_error"] = None
                     except Exception as exc:
+                        # Prediction succeeded independently; retain it and explain
+                        # why the optional overlay is unavailable.
                         st.session_state["gradcam_overlay"] = None
                         st.session_state["gradcam_error"] = str(exc)
 

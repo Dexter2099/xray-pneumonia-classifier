@@ -232,8 +232,10 @@ class UnderTheHood(QWidget):
         )
 
     def append_event(self, event: TimelineEvent) -> None:
+        """Update the matching Running row, retaining at most 100 operation records."""
         widget = self.timeline_table
         row = widget.rowCount()
+        # Pair by request AND stage: a later completion must not overwrite unrelated work.
         if event.outcome != "Running":
             for candidate in range(widget.rowCount() - 1, -1, -1):
                 item = widget.item(candidate, 0)

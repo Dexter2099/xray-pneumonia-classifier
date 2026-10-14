@@ -19,11 +19,14 @@ def evaluate_model(config):
     if not isinstance(batch_size, int) or isinstance(batch_size, bool) or batch_size < 1:
         raise ValueError("Evaluation batch_size must be a positive integer.")
     dataset = ChestXrayDataset(data_dir, "test", image_size=224)
+    # Final evaluation uses only held-out images and the reusable inference path.
+    # Training/validation loaders are deliberately unnecessary here.
     records = sorted(zip(dataset.image_paths, dataset.labels, strict=True))
     if not records:
         raise ValueError("The test dataset is empty.")
     service = PredictionService(settings)
-    y_true, y_pred = [], []
+    y_true: list[int] = []
+    y_pred: list[int] = []
     for offset in range(0, len(records), batch_size):
         batch = records[offset : offset + batch_size]
         predictions = service.predict_batch([Path(path) for path, _ in batch])
@@ -58,4 +61,5 @@ def plot_confusion_matrix(cm, save_dir):
         figure.tight_layout()
         figure.savefig(Path(save_dir) / "confusion_matrix.png")
     finally:
+        # Repeated evaluations must release Matplotlib's process-global figure registry.
         plt.close(figure)

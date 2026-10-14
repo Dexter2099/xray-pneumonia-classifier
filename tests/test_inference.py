@@ -1,5 +1,6 @@
 import pytest
-torch = pytest.importorskip("torch")
+import torch
+
 from src.inference import predict_image
 from src.model import SimpleCNN
 
