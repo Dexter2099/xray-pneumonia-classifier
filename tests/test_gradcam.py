@@ -18,9 +18,7 @@ def test_normalize_cam_returns_zeros_when_cam_has_no_signal():
     assert np.all(normalized == 0.0)
 
 
-@pytest.mark.parametrize(
-    "cam", [np.array([]), np.array([[np.nan]]), np.array([[np.inf]])]
-)
+@pytest.mark.parametrize("cam", [np.array([]), np.array([[np.nan]]), np.array([[np.inf]])])
 def test_unusable_heatmaps_are_explicit(cam):
     with pytest.raises(ExplanationError):
         normalize_cam(cam)
@@ -63,9 +61,7 @@ def test_overlay_uses_rgb_and_reports_zero_signal():
     import cv2
     from PIL import Image
 
-    service = SimpleNamespace(
-        device="cpu", lock=RLock(), model=SimpleNamespace(conv3=object())
-    )
+    service = SimpleNamespace(device="cpu", lock=RLock(), model=SimpleNamespace(conv3=object()))
     image = Image.new("L", (224, 224), 60)
     cam = np.zeros((224, 224), dtype=np.float32)
     cam[:112] = 1

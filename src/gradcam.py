@@ -34,9 +34,7 @@ class GradCAM:
         self.gradients = None
         self.activations = None
 
-    def generate(
-        self, input_tensor: torch.Tensor, class_idx: int | None = None
-    ) -> np.ndarray:
+    def generate(self, input_tensor: torch.Tensor, class_idx: int | None = None) -> np.ndarray:
         if input_tensor.ndim != 4 or input_tensor.shape[0] != 1:
             raise ExplanationError("Grad-CAM requires exactly one batched image.")
 
@@ -52,9 +50,7 @@ class GradCAM:
             handles.append(self.target_layer.register_full_backward_hook(backward_hook))
             with torch.inference_mode(False), torch.enable_grad():
                 output = self.model(input_tensor.detach().clone())
-                index = (
-                    int(output[0].argmax().item()) if class_idx is None else class_idx
-                )
+                index = int(output[0].argmax().item()) if class_idx is None else class_idx
                 if not 0 <= index < output.shape[1]:
                     raise ExplanationError(
                         "Explanation class index is outside the model's classes."
@@ -71,9 +67,7 @@ class GradCAM:
                 cam = np.maximum((weights[:, None, None] * activations).sum(axis=0), 0)
                 return normalize_cam(cv2.resize(cam, (224, 224)))
         except RuntimeError as exc:
-            raise ExplanationError(
-                "Grad-CAM could not compute gradients for this image."
-            ) from exc
+            raise ExplanationError("Grad-CAM could not compute gradients for this image.") from exc
         finally:
             for handle in handles:
                 handle.remove()
@@ -96,14 +90,10 @@ class GradCamExplainer:
         with self.service.lock:
             cam = GradCAM(self.service.model, self.service.model.conv3).generate(tensor)
         if not np.any(cam > 0):
-            raise ExplanationError(
-                "No usable heatmap signal. The prediction is still available."
-            )
+            raise ExplanationError("No usable heatmap signal. The prediction is still available.")
         grayscale = np.asarray(decoded.resize((224, 224)))
         heatmap = cv2.applyColorMap(np.uint8(255 * cam), cv2.COLORMAP_JET)
-        overlay = cv2.addWeighted(
-            cv2.cvtColor(grayscale, cv2.COLOR_GRAY2BGR), 0.6, heatmap, 0.4, 0
-        )
+        overlay = cv2.addWeighted(cv2.cvtColor(grayscale, cv2.COLOR_GRAY2BGR), 0.6, heatmap, 0.4, 0)
         return Image.fromarray(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
 
 
