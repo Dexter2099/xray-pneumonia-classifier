@@ -3,7 +3,10 @@ on:
   pull_request:
   workflow_dispatch:
   push:
-    branches: [main, codex/xray-core, codex/xray-viewer]
+    branches: [main]
+concurrency:
+  group: python-quality-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:

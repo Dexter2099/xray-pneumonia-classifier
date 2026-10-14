@@ -56,7 +56,7 @@ The recorded CPU benchmark measured **84.8 ms → 7.9 ms** median prediction tim
 - [Benchmark measurements](docs/evidence/benchmark.json)
 - [624-image evaluation report](docs/evidence/evaluation.json)
 
-Focused PRs are stacked to preserve existing history: [existing demo baseline #4](https://github.com/Dexter2099/xray-pneumonia-classifier/pull/4), [inference core #5](https://github.com/Dexter2099/xray-pneumonia-classifier/pull/5), then [desktop viewer #6](https://github.com/Dexter2099/xray-pneumonia-classifier/pull/6). Review in that order. Each PR compares against its named base branch.
+The component history is preserved in focused PRs: [existing demo baseline #4](https://github.com/Dexter2099/xray-pneumonia-classifier/pull/4), [inference core #5](https://github.com/Dexter2099/xray-pneumonia-classifier/pull/5), then [desktop viewer #6](https://github.com/Dexter2099/xray-pneumonia-classifier/pull/6). They began as a stack and were retargeted to main as their dependencies merged; the merge commits retain the focused implementation commits.
 
 ## Setup
 1. Clone the repository:
