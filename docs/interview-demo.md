@@ -13,17 +13,23 @@ The smoke run creates a deliberately corrupt PNG at `demo-output/viewer/corrupt-
 
 Open `demo-assets/sample-xrays/pneumonia-high-confidence.jpeg`, then select **Predict and explain**. Show the prediction, class probabilities and Grad-CAM overlay.
 
+Open **Under the hood → Input inspector**. Show the original grayscale dimensions, the 224 × 224 resized preview, float32 shape, normalised range and histogram. Explain that the inspector uses the shared preprocessing function in a separate diagnostic call; the inference service still prepares its own input.
+
 Say: “I kept the existing trained model. The improvement is how the application validates inputs, runs it and handles failure. The heatmap shows regions influencing the output; it does not establish a diagnosis.”
 
 ## 2. Open a corrupt image and demonstrate recovery
 
 Open `demo-output/viewer/corrupt-example.png`. Show the message, cleared previous result and disabled prediction action. Reopen the valid image and run a successful prediction.
 
+In **Execution timeline**, show the failed **Decode / validate** stage and the later successful request. The input inspector is cleared when decoding fails. Click a stage to read its responsibility.
+
 Say: “Image decoding happens at an explicit boundary. A corrupt file produces a useful error, and the application remains usable without restarting.”
 
 ## 3. Run repeated predictions and show model reuse
 
 Select **Predict and explain** twice. Point to **Model loads: 1** and the increasing prediction counter. Move or resize the window while processing.
+
+Show the request IDs, prediction and Grad-CAM stages and common worker-thread ID in the timeline. Prediction uses evaluation mode with gradients disabled; Grad-CAM requires a separate gradient-enabled pass. These are operation timings, not operator profiling or the controlled benchmark.
 
 Say: “The worker owns one loaded model. Prediction and explanation reuse it sequentially, so the GUI stays responsive and Grad-CAM hooks cannot race with another request.”
 
@@ -36,6 +42,8 @@ Say: “The worker owns one loaded model. Prediction and explanation reuse it se
 ```
 
 Open `docs/evidence/regression.json` and `docs/evidence/benchmark.json`, or the fresh results in `outputs/reports/`. Explain that checkpoint/input hashes protect the baseline. The borderline case is included because tiny unintended changes could affect its decision.
+
+Alternatively, select **Under the hood → Verification → Refresh saved report** after generating the regression report. Show expected versus recorded actual probabilities and maximum differences. The panel identifies the report's checkpoint, source revision, clean/dirty state and tolerances; old evidence stays labelled historical. Refreshing reads saved JSON and does not rerun tests or test the image currently open.
 
 The recorded benchmark was 84.8 ms versus 7.9 ms median latency (10.72×), with identical probabilities. Both algorithms used the same current runtime, decoded image and CPU thread count. Startup is separate and the filesystem cache is warm; the benchmark is not a claim about every machine.
 

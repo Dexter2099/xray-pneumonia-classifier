@@ -1,6 +1,6 @@
 # AI-assisted development and the engineering harness
 
-This project was built and improved with AI-assisted coding. Codex contributed implementation, tests, integration, automated source review and verification commands. Local Qwen produced bounded drafts for image handling, the desktop window layout and the verification runner, which were inspected and changed before integration. Dexter set the interview goal, scope and acceptance scenarios. This is not a claim that Dexter manually authored or personally reviewed every line.
+This project was built and improved with AI-assisted coding. Codex contributed implementation, tests, integration, automated source review and verification commands. Local Qwen produced bounded drafts for image handling, the desktop window layout, the verification runner and input-inspection snapshots, which were inspected and changed before integration. Dexter set the interview goal, scope and acceptance scenarios. This is not a claim that Dexter manually authored or personally reviewed every line.
 
 The reusable repository harness was added after the initial viewer implementation to codify the constraints and checks already being used. It should not be presented as a framework that existed from the first commit, a fully autonomous development system, or proof that an agent's decisions are always correct.
 
@@ -40,6 +40,8 @@ The command stops on the first failed check, returns a non-zero status, and reco
 The original prediction helper reloaded the checkpoint for every image. Before changing it, the original trained outputs were captured, including a borderline prediction. The reusable service was then introduced and tested for one model load, repeated predictions, image/tensor equivalence and single/batch agreement. A benchmark compared both algorithms using the same runtime and input, and refused to report success if probabilities disagreed.
 
 The window layout draft also required correction during review: clearing a QLabel's text after assigning its pixmap cleared the image, and the offscreen Windows renderer needed a font for readable screenshots. Source review and an actual rendered run caught problems that a plausible-looking code draft alone did not establish were absent.
+
+For the optional input inspector, local Qwen drafted a small snapshot module. Review corrected an unsupported histogram argument combination, a sample-standard-deviation calculation labelled as population standard deviation, and an unbounded source preview. Known-pixel tests verify the corrected statistics and display reconstruction. The inference tensor and historical scientific fixtures were not changed to accommodate diagnostics.
 
 ## Interview wording
 
