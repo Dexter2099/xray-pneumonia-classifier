@@ -20,6 +20,14 @@ The trusted local state dictionary must exist at `outputs/checkpoints/best_model
 
 The viewer validates PNG/JPEG files before prediction, displays the original image and explanation, keeps long operations off the GUI thread, and shows prediction timing and model-load counters. Model loading occurs once per session unless explicitly reloaded. A corrupt image clears stale results and leaves the application ready to open another image.
 
+Select **Under the hood** to open an optional dock with three tabs:
+
+- **Input inspector:** decoded grayscale and resized previews, tensor shape/dtype, numerical statistics and a histogram. It previews the shared preprocessing function separately; it does not replace the inference tensor or retain a computation graph.
+- **Execution timeline:** actual worker stages, request IDs, outcomes, durations and thread IDs. Corrupt input stops at decoding; failed explanations retain successful predictions. The last 100 stages are kept in memory.
+- **Verification:** saved original-versus-refactored probabilities, numerical differences, frozen tolerances, checkpoint identity and source revision. Generate fresh evidence with `python -m scripts.verify_regression`, then select **Refresh saved report**. Refresh reads evidence without running tests. Historical, dirty or unidentified source states and different active checkpoints are explicitly labelled.
+
+The panel starts hidden, can be closed or detached, and does not trigger model loading or prediction when toggled. Small bounded diagnostics are captured in the worker even while hidden so opening it shows the current input and recent operations. The inspector starts after grayscale decoding; it does not claim to preserve original colour. Stage timings include diagnostics overhead and are separate from the controlled benchmark.
+
 Files are limited to 20 MiB and 20 million pixels. Images become 8-bit grayscale and resize to 224 × 224. Raw tensor inputs must be dense float32, shaped `(1, 224, 224)`, finite and in `[0,1]`; normalisation then maps them to `[-1,1]` once. Configuration paths resolve relative to the repository, independently of the launch directory. The model's two-logit argmax rule is preserved; the old YAML `threshold` value is not used.
 
 ## Verification and interview walkthrough

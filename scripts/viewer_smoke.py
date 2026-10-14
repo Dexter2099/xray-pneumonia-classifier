@@ -32,6 +32,8 @@ def main() -> int:
             QFontDatabase.addApplicationFont(str(font))
     window = ViewerWindow()
     controller = ViewerController(window, load_settings())
+    results = []
+    controller.worker.completed.connect(results.append)
     window.show()
 
     def wait(predicate):
@@ -45,6 +47,8 @@ def main() -> int:
         wait(lambda: not controller.busy)
         if not controller.model_ready:
             raise RuntimeError(window.message_label.text())
+        if not window.hood_dock.isHidden():
+            raise RuntimeError("Diagnostics must be optional and hidden initially")
         sample = ROOT / "demo-assets/sample-xrays/pneumonia-high-confidence.jpeg"
         controller.open_image(str(sample))
         wait(lambda: not controller.busy)
@@ -55,12 +59,25 @@ def main() -> int:
             raise RuntimeError("The real prediction or Grad-CAM overlay is missing")
         app.processEvents()
         window.grab().save(str(args.output / "prediction.png"))
+        window.resize(1640, 900)
+        window.hood_button.setChecked(True)
+        for index, name in enumerate(("input-inspector", "execution-timeline", "verification")):
+            window.hood.tabs.setCurrentIndex(index)
+            app.processEvents()
+            window.grab().save(str(args.output / f"{name}.png"))
+        if sum(window.hood.histogram.counts) != 224 * 224:
+            raise RuntimeError("Input inspector did not show the canonical tensor histogram")
+        if window.hood.verification_table.rowCount() != 3:
+            raise RuntimeError("Verification panel did not load the three baseline cases")
+        window.hood.tabs.setCurrentIndex(0)
         corrupt = args.output / "corrupt-example.png"
         corrupt.write_bytes(b"Deliberately corrupt interview demonstration input")
         controller.open_image(str(corrupt))
         wait(lambda: not controller.busy)
         if controller.image is not None or "corrupt" not in window.message_label.text():
             raise RuntimeError("Corrupt input was not handled cleanly")
+        if window.hood.histogram.counts:
+            raise RuntimeError("Corrupt input left stale inspection data")
         window.grab().save(str(args.output / "corrupt-input.png"))
         controller.open_image(str(sample))
         wait(lambda: not controller.busy)
@@ -68,6 +85,10 @@ def main() -> int:
         wait(lambda: not controller.busy)
         if controller.worker.model_loads != 1 or controller.worker.predictions != 3:
             raise RuntimeError("The desktop model was unexpectedly reloaded")
+        if len(results) != 3 or not all(
+            result.prediction == results[0].prediction for result in results
+        ):
+            raise RuntimeError("Predictions changed with diagnostics displayed or after recovery")
         window.grab().save(str(args.output / "recovered.png"))
         report = {
             "passed": True,
@@ -76,6 +97,10 @@ def main() -> int:
             "model_loads": 1,
             "corrupt_image_recovery": True,
             "explanation_displayed": window._overlay is not None,
+            "input_inspector_displayed": True,
+            "execution_stages_displayed": window.hood.timeline_table.rowCount(),
+            "verification_cases_displayed": window.hood.verification_table.rowCount(),
+            "diagnostics_preserve_predictions": True,
         }
         (args.output / "smoke.json").write_text(json.dumps(report, indent=2) + "\n")
         print(json.dumps(report))

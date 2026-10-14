@@ -2,6 +2,7 @@ from PIL import Image
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QCloseEvent, QImage, QPixmap
 from PySide6.QtWidgets import (
+    QDockWidget,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -11,6 +12,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from src.viewer.panels import UnderTheHood
 
 
 class ViewerWindow(QMainWindow):
@@ -60,6 +63,9 @@ class ViewerWindow(QMainWindow):
         toolbar_layout.addWidget(self.open_button)
         toolbar_layout.addWidget(self.predict_button)
         toolbar_layout.addWidget(self.retry_button)
+        self.hood_button = QPushButton("Under the hood")
+        self.hood_button.setCheckable(True)
+        toolbar_layout.addWidget(self.hood_button)
         toolbar_layout.addStretch()
         main_layout.addLayout(toolbar_layout)
 
@@ -137,6 +143,18 @@ class ViewerWindow(QMainWindow):
         results_layout.addWidget(self.status_label)
         main_layout.addWidget(results_frame)
 
+        self.hood = UnderTheHood()
+        self.hood_dock = QDockWidget("Under the hood", self)
+        self.hood_dock.setObjectName("under_the_hood")
+        self.hood_dock.setAllowedAreas(
+            Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea
+        )
+        self.hood_dock.setWidget(self.hood)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.hood_dock)
+        self.hood_dock.hide()
+        self.hood_button.toggled.connect(self.hood_dock.setVisible)
+        self.hood_dock.visibilityChanged.connect(self.hood_button.setChecked)
+
         self.setStyleSheet(self._build_stylesheet())
         self.set_preview(None)
         self.set_overlay(None)
@@ -144,6 +162,13 @@ class ViewerWindow(QMainWindow):
     def _build_stylesheet(self):
         return """
             QMainWindow { background-color: #111827; }
+            QDockWidget { color: #f3f4f6; background-color: #1f2937; }
+            QDockWidget::title { padding: 8px; background-color: #1f2937; }
+            QTabWidget::pane { border: 1px solid #374151; background-color: #1f2937; }
+            QTabBar::tab { background: #111827; padding: 8px; }
+            QTabBar::tab:selected { color: #2dd4bf; background: #1f2937; }
+            QTableWidget, QPlainTextEdit { background: #111827; color: #d1d5db; border: 1px solid #374151; }
+            QHeaderView::section { background: #374151; color: #f3f4f6; padding: 4px; }
             QWidget { color: #f3f4f6; font-family: 'Segoe UI', sans-serif; }
             QFrame#panel { background-color: #1f2937; border: 1px solid #374151; border-radius: 8px; }
             QLabel#title { font-size: 20px; font-weight: bold; color: #f3f4f6; }

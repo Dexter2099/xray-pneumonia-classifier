@@ -13,6 +13,9 @@ The existing CNN and its checkpoint remain the scientific baseline. Engineering 
 | `AnalysisWorker` | Own a backend in one Qt worker thread and serialize expensive operations. |
 | `ViewerController` | Manage busy/ready/error state and associate results with requests. |
 | `ViewerWindow` | Render pixels and text and emit user actions; it imports no model code. |
+| `InputInspection` / `TimelineEvent` | Small detached snapshots and actual operation events; no retained tensors or graphs. |
+| `UnderTheHood` | Optional dock rendering input statistics, worker events and saved evidence. |
+| `read_evidence` | Bound JSON input, compare saved expectations/tolerances with the frozen baseline, recompute differences and label provenance. |
 
 ## SOLID applied to this application
 
@@ -37,6 +40,14 @@ Prediction uses evaluation mode plus `torch.inference_mode()`. Grad-CAM also use
 Expected failures use application exceptions. The GUI displays actionable messages. Unexpected failures are caught at the thread boundary so they do not strand a disabled window; diagnostics go to standard logging. Images are never written to logs.
 
 A new image clears the previous prediction and overlay before decoding. Corrupt files leave no stale input/results. Request identifiers reject stale callbacks. Conflicting actions are disabled and checked again by the controller. If Grad-CAM fails, the completed prediction remains visible. Closing during work waits for that operation before the worker thread exits; it never forcibly terminates a PyTorch operation.
+
+## Optional diagnostics preserve the inference boundary
+
+The input inspector calls the existing `preprocess_image` function on the validated grayscale image to build bounded previews and scalar statistics. It does not intercept, modify or substitute the tensor used by `PredictionService`. Reverse normalisation is used only to render the resized preview. The scientific model, input contract and prediction/explanation paths are unchanged.
+
+The worker measures real operations and sends immutable event metadata through queued Qt signals. Prediction remains one combined preprocessing/forward/softmax stage; Grad-CAM remains a separate gradient-enabled pass. The timeline does not fabricate operator-level measurements. It retains at most 100 stages and never contains image pixels. Diagnostics are collected while the panel is hidden, with their overhead shown separately from the inference benchmark. Inspector/report failures are isolated so they cannot block an otherwise valid prediction or strand a busy window.
+
+Verification refresh performs bounded file reads and Git identity checks in the worker, without loading another model or executing tests. Local `outputs/reports/regression.json` takes precedence over the committed historical snapshot. An invalid local report is shown as unavailable rather than silently replaced by an old PASS. The reader checks references and tolerances against the frozen baseline and recomputes per-case comparisons. A recorded PASS is evidence about a saved run; it is not a current prediction or cryptographic attestation of execution. Source/checkpoint matching is checked at refresh time, and a clean source revision is required before calling evidence current. Unidentified, dirty or different revisions remain historical.
 
 ## Scope and trade-offs
 

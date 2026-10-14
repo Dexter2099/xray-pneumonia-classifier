@@ -3,12 +3,13 @@ import time
 
 import pytest
 from PIL import Image
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Qt, QTimer
 
 from src.errors import ExplanationError, ModelLoadError
 from src.inference import Prediction
 from src.settings import InferenceSettings
 from src.viewer.controller import ViewerController
+from src.viewer.diagnostics import TimelineEvent
 from src.viewer.window import ViewerWindow
 from src.viewer.worker import AnalysisBackend
 
@@ -76,6 +77,18 @@ def test_valid_image_prediction_explanation_and_model_reuse(viewer, qtbot, tmp_p
     assert "Predictions: 2" in window.session_label.text()
     assert not window.overlay_label.pixmap().isNull()
     assert all(thread_id != threading.get_ident() for thread_id in loads + predictor.thread_ids)
+    events = timeline(window)
+    assert [event.stage for event in events if event.request_id > 0] == [
+        "Decode / validate",
+        "Input inspection",
+        "Prediction",
+        "Grad-CAM",
+        "Prediction",
+        "Grad-CAM",
+    ]
+    assert all(event.outcome == "Complete" for event in events)
+    assert all(event.worker_thread_id != threading.get_ident() for event in events)
+    assert all(event.elapsed_seconds > 0 for event in events)
 
 
 def test_corrupt_image_clears_results_then_recovers(viewer, qtbot, tmp_path):
@@ -92,6 +105,10 @@ def test_corrupt_image_clears_results_then_recovers(viewer, qtbot, tmp_path):
     assert not window.predict_button.isEnabled()
     assert window._overlay is None
     assert window.prediction_label.text() == "Prediction: -"
+    assert window.hood.histogram.counts == ()
+    assert window.hood.grayscale_label.pixmap().isNull()
+    assert timeline(window)[-1].stage == "Decode / validate"
+    assert timeline(window)[-1].outcome == "Failed"
     open_valid(qtbot, tmp_path, controller)
     controller.predict()
     qtbot.waitUntil(lambda: not controller.busy)
@@ -108,6 +125,100 @@ def test_explanation_failure_retains_prediction(viewer, qtbot, tmp_path):
     assert "No usable" in window.message_label.text()
     assert window._overlay is None
     assert window.predict_button.isEnabled()
+    assert [(event.stage, event.outcome) for event in timeline(window)[-2:]] == [
+        ("Prediction", "Complete"),
+        ("Grad-CAM", "Failed"),
+    ]
+
+
+def timeline(window):
+    return [
+        window.hood.timeline_table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+        for row in range(window.hood.timeline_table.rowCount())
+    ]
+
+
+def test_optional_panel_and_inspector_do_not_trigger_predictions(viewer, qtbot, tmp_path):
+    window, controller, predictor, _, loads = viewer
+    assert window.hood_dock.isHidden()
+    qtbot.mouseClick(window.hood_button, Qt.MouseButton.LeftButton)
+    assert window.hood_dock.isVisible()
+    open_valid(qtbot, tmp_path, controller)
+    assert "320 × 200" in window.hood.input_summary.text()
+    assert "(1, 1, 224, 224)" in window.hood.input_summary.text()
+    assert sum(window.hood.histogram.counts) == 224 * 224
+    assert not window.hood.resized_label.pixmap().isNull()
+    for index in range(3):
+        window.hood.tabs.setCurrentIndex(index)
+    controller.refresh_verification()
+    qtbot.waitUntil(lambda: not controller.busy)
+    assert "Different active checkpoint" in window.hood.verification_status.text()
+    assert window.hood.verification_table.rowCount() == 3
+    window.hood_dock.close()
+    assert not window.hood_button.isChecked()
+    assert predictor.calls == 0 and len(loads) == 1
+
+
+def test_diagnostic_failure_does_not_block_valid_input_or_prediction(
+    viewer, qtbot, tmp_path, monkeypatch
+):
+    window, controller, predictor, *_ = viewer
+
+    def fail(image):
+        raise RuntimeError("Simulated inspector failure")
+
+    monkeypatch.setattr("src.viewer.worker.inspect_input", fail)
+    open_valid(qtbot, tmp_path, controller)
+    assert controller.image is not None
+    assert timeline(window)[-1].outcome == "Failed"
+    controller.predict()
+    qtbot.waitUntil(lambda: not controller.busy)
+    assert predictor.calls == 1
+    assert "NORMAL" in window.prediction_label.text()
+
+
+def test_verification_failure_does_not_strand_busy_window(viewer, qtbot, monkeypatch):
+    window, controller, *_ = viewer
+
+    def fail(checkpoint):
+        raise RuntimeError("Simulated report reader failure")
+
+    monkeypatch.setattr("src.viewer.worker.load_verification", fail)
+    controller.refresh_verification()
+    qtbot.waitUntil(lambda: not controller.busy)
+    assert "Unavailable" in window.hood.verification_status.text()
+    assert window.open_button.isEnabled()
+    assert timeline(window)[-1].outcome == "Failed"
+
+
+def test_failed_model_reload_clears_previous_checkpoint_comparison(viewer, qtbot):
+    window, controller, *_ = viewer
+    assert window.hood.verification_table.rowCount() == 3
+
+    def fail(settings):
+        raise ModelLoadError("Simulated changed/missing checkpoint")
+
+    controller.worker.factory = fail
+    controller.reload_model()
+    assert window.hood.verification_table.rowCount() == 0
+    assert "Model reloading" in window.hood.verification_status.text()
+    qtbot.waitUntil(lambda: not controller.busy)
+    assert not controller.model_ready
+    assert "No loaded model" in window.hood.verification_status.text()
+    assert window.hood.verification_table.rowCount() == 0
+    assert timeline(window)[-1].stage == "Model load"
+    assert timeline(window)[-1].outcome == "Failed"
+
+
+def test_timeline_is_bounded_and_stale_events_are_ignored(viewer):
+    window, controller, *_ = viewer
+    window.hood._clear_timeline()
+    controller._timeline_event(TimelineEvent(999, "Stale", "Complete", 0.01, 42, "ignore"))
+    assert timeline(window) == []
+    for index in range(110):
+        window.hood.append_event(TimelineEvent(index, "Stage", "Complete", 0.01, 42, "detail"))
+    assert len(timeline(window)) == 100
+    assert timeline(window)[0].request_id == 10
 
 
 def test_gui_event_loop_runs_and_conflicting_requests_are_rejected(viewer, qtbot, tmp_path):

@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import platform
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -11,10 +12,12 @@ import torch
 
 from src.errors import XrayError
 from src.inference import PredictionService
+from src.provenance import source_state
 from src.settings import ROOT, InferenceSettings
 
 
 def verify(checkpoint: Path, threads: int = 4) -> dict:
+    revision, dirty = source_state(ROOT)
     torch.set_num_threads(threads)
     baseline = json.loads((ROOT / "tests/fixtures/trained_baseline.json").read_text())
     service = PredictionService(InferenceSettings(checkpoint, "cpu"))
@@ -58,6 +61,9 @@ def verify(checkpoint: Path, threads: int = 4) -> dict:
         for single, batch in zip(singles, batches, strict=True)
     )
     return {
+        "generated_utc": datetime.now(UTC).isoformat(),
+        "source_revision": revision,
+        "working_tree_dirty": dirty,
         "passed": all(case["passed"] for case in cases) and batch_agrees,
         "baseline_commit": baseline["baseline_commit"],
         "baseline_torch_version": baseline["torch_version"],
