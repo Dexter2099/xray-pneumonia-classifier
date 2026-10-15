@@ -20,6 +20,10 @@ The trusted local state dictionary must exist at `outputs/checkpoints/best_model
 
 The viewer validates PNG/JPEG files before prediction, displays the original image and explanation, keeps long operations off the GUI thread, and shows prediction timing and model-load counters. Model loading occurs once per session unless explicitly reloaded. A corrupt image clears stale results and leaves the application ready to open another image.
 
+On startup, the viewer previews the first image in `data/raw/chest_xray/test`, including its NORMAL and PNEUMONIA subfolders. **Choose folder** selects another image folder and remembers it for the next launch in the local, ignored `outputs/viewer-preferences.ini` file. PNG/JPEG filenames are indexed recursively in a consistent, case-insensitive order. The filename and **Image 1 of 624** counter identify the current selection; hover over the counter for the full folder path.
+
+**Next image** displays the next image without predicting or reloading the model. Click **Predict and explain** separately. Moving to another image clears the previous prediction and overlay. Next is disabled during work and at the end of the folder; a corrupt or removed image shows an error and leaves Next available when another image remains. An empty, missing or unreadable folder produces a recoverable message; use Choose folder to continue. **Open image** still supports individual files. Opening a file outside the current sequence switches to single-image mode; choose a folder to resume browsing.
+
 Select **Under the hood** to open an optional dock with three tabs:
 
 - **Input inspector:** decoded grayscale and resized previews, tensor shape/dtype, numerical statistics and a histogram. It previews the shared preprocessing function separately; it does not replace the inference tensor or retain a computation graph.

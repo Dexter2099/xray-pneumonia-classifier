@@ -1,5 +1,7 @@
 """Render analysis snapshots and emit user intent; all widgets stay on the GUI thread."""
 
+from pathlib import Path
+
 from PIL import Image
 from PySide6.QtCore import QEvent, QObject, Qt, Signal
 from PySide6.QtGui import QCloseEvent, QFont, QImage, QPixmap
@@ -24,6 +26,8 @@ from src.viewer.panels import UnderTheHood
 
 class ViewerWindow(QMainWindow):
     open_requested = Signal(str)
+    folder_requested = Signal(str)
+    next_requested = Signal()
     predict_requested = Signal()
     retry_requested = Signal()
     closing = Signal(object)
@@ -35,6 +39,8 @@ class ViewerWindow(QMainWindow):
         self.resize(min(1360, available.width() - 64), min(940, available.height() - 64))
         self._preview: QPixmap | None = None
         self._overlay: QPixmap | None = None
+        self._browse_folder: Path | None = None
+        self._has_next = False
 
         central_widget = QWidget()
         central_widget.setObjectName("viewer_content")
@@ -59,6 +65,20 @@ class ViewerWindow(QMainWindow):
         header_layout.addWidget(subtitle_label)
         header_layout.addWidget(edu_label)
         main_layout.addLayout(header_layout)
+
+        browser_layout = QHBoxLayout()
+        self.folder_button = QPushButton("Choose folder")
+        self.folder_button.clicked.connect(self._on_folder_clicked)
+        self.next_button = QPushButton("Next image")
+        self.next_button.setEnabled(False)
+        self.next_button.clicked.connect(self.next_requested.emit)
+        self.image_position_label = QLabel("Choose a folder to browse images")
+        self.image_position_label.setWordWrap(True)
+        self.image_position_label.setTextFormat(Qt.TextFormat.PlainText)
+        browser_layout.addWidget(self.folder_button)
+        browser_layout.addWidget(self.next_button)
+        browser_layout.addWidget(self.image_position_label, 1)
+        main_layout.addLayout(browser_layout)
 
         toolbar_layout = QHBoxLayout()
         toolbar_layout.setSpacing(10)
@@ -248,9 +268,32 @@ class ViewerWindow(QMainWindow):
         """
 
     def _on_open_clicked(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Open Image", "", "Images (*.png *.jpg *.jpeg)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Open Image", str(self._browse_folder or ""), "Images (*.png *.jpg *.jpeg)"
+        )
         if path:
             self.open_requested.emit(path)
+
+    def _on_folder_clicked(self):
+        path = QFileDialog.getExistingDirectory(
+            self, "Choose image folder", str(self._browse_folder or "")
+        )
+        if path:
+            self.folder_requested.emit(path)
+
+    def show_browser(
+        self, folder: Path | None, current: Path | None, position: int, count: int
+    ) -> None:
+        self._browse_folder = folder
+        self._has_next = 0 < position < count
+        if folder is not None and current is not None:
+            name = current.relative_to(folder).as_posix()
+            self.image_position_label.setText(f"Image {position} of {count} · {name}")
+        elif current is not None:
+            self.image_position_label.setText(f"Single image · {current.name}")
+        else:
+            self.image_position_label.setText("No images selected · Choose a folder")
+        self.image_position_label.setToolTip(str(folder or current or ""))
 
     def _pil_to_pixmap(self, image: Image.Image) -> QPixmap:
         rgb_image = image.convert("RGB")
@@ -302,6 +345,8 @@ class ViewerWindow(QMainWindow):
 
     def set_actions_enabled(self, *, available: bool, can_predict: bool) -> None:
         self.open_button.setEnabled(available)
+        self.folder_button.setEnabled(available)
+        self.next_button.setEnabled(available and self._has_next)
         self.retry_button.setEnabled(available)
         self.hood.refresh_button.setEnabled(available)
         self.predict_button.setEnabled(can_predict)

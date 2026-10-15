@@ -321,3 +321,204 @@ def test_startup_error_can_be_retried(qtbot, tmp_path):
     finally:
         window.close()
         qtbot.waitUntil(lambda: not controller.worker_thread.isRunning(), timeout=10000)
+
+
+def make_browser_images(folder):
+    normal = folder / "NORMAL"
+    pneumonia = folder / "PNEUMONIA"
+    normal.mkdir(parents=True)
+    pneumonia.mkdir()
+    Image.new("L", (320, 200), 40).save(normal / "a.PNG")
+    (normal / "b.png").write_bytes(b"deliberately corrupt")
+    Image.new("L", (320, 200), 160).save(pneumonia / "c.jpeg")
+    (folder / "notes.txt").write_text("not an image")
+
+
+def test_folder_navigation_is_preview_only_and_recovers_from_corrupt_file(viewer, qtbot, tmp_path):
+    window, controller, predictor, _, loads = viewer
+    folder = tmp_path / "test-images"
+    make_browser_images(folder)
+    assert hasattr(controller, "open_folder"), "Folder browsing is not implemented"
+    controller.open_folder(str(folder))
+    qtbot.waitUntil(lambda: not controller.busy)
+    assert controller.image.getpixel((0, 0)) == 40
+    assert "Image 1 of 3" in window.image_position_label.text()
+    assert "NORMAL/a.PNG" in window.image_position_label.text()
+    assert predictor.calls == 0 and len(loads) == 1
+    assert window.next_button.isEnabled()
+    controller.predict()
+    qtbot.waitUntil(lambda: not controller.busy)
+    assert window._overlay is not None
+    qtbot.mouseClick(window.next_button, Qt.MouseButton.LeftButton)
+    qtbot.waitUntil(lambda: not controller.busy)
+    assert "Image 2 of 3" in window.image_position_label.text()
+    assert controller.image is None
+    assert window._overlay is None
+    assert window.prediction_label.text() == "Prediction: -"
+    assert "corrupt" in window.message_label.text()
+    assert window.next_button.isEnabled()
+    qtbot.mouseClick(window.next_button, Qt.MouseButton.LeftButton)
+    qtbot.waitUntil(lambda: not controller.busy)
+    assert controller.image.getpixel((0, 0)) == 160
+    assert "Image 3 of 3" in window.image_position_label.text()
+    assert not window.next_button.isEnabled()
+    controller.next_image()
+    assert "Image 3 of 3" in window.image_position_label.text()
+    assert predictor.calls == 1 and len(loads) == 1
+    scans = [event for event in timeline(window) if event.stage == "Folder scan"]
+    assert scans and all(e.worker_thread_id != threading.get_ident() for e in scans)
+
+
+@pytest.mark.parametrize("missing", [False, True])
+def test_unusable_folder_clears_stale_results_and_allows_another_folder(
+    viewer, qtbot, tmp_path, missing
+):
+    window, controller, *_ = viewer
+    open_valid(qtbot, tmp_path, controller)
+    controller.predict()
+    qtbot.waitUntil(lambda: not controller.busy)
+    folder = tmp_path / "unusable"
+    if not missing:
+        folder.mkdir()
+    assert hasattr(controller, "open_folder"), "Folder browsing is not implemented"
+    controller.open_folder(str(folder))
+    qtbot.waitUntil(lambda: not controller.busy)
+    assert controller.image is None and window._overlay is None
+    assert not window.next_button.isEnabled()
+    assert not window.predict_button.isEnabled()
+    assert window.folder_button.isEnabled()
+    assert window.message_label.text()
+    good = tmp_path / "good"
+    make_browser_images(good)
+    controller.open_folder(str(good))
+    qtbot.waitUntil(lambda: not controller.busy)
+    assert controller.image is not None and window.next_button.isEnabled()
+
+
+def test_navigation_is_disabled_during_prediction_and_manual_open_clears_counter(
+    viewer, qtbot, tmp_path
+):
+    window, controller, predictor, _, loads = viewer
+    folder = tmp_path / "test-images"
+    make_browser_images(folder)
+    assert hasattr(controller, "open_folder"), "Folder browsing is not implemented"
+    controller.open_folder(str(folder))
+    qtbot.waitUntil(lambda: not controller.busy)
+    controller.predict()
+    assert not window.next_button.isEnabled() and not window.folder_button.isEnabled()
+    controller.next_image()
+    controller.open_folder(str(tmp_path / "missing"))
+    qtbot.waitUntil(lambda: not controller.busy)
+    assert "Image 1 of 3" in window.image_position_label.text()
+    assert predictor.calls == 1 and len(loads) == 1
+    open_valid(qtbot, tmp_path, controller)
+    assert "Image 1 of 3" not in window.image_position_label.text()
+    assert "valid.png" in window.image_position_label.text()
+    assert not window.next_button.isEnabled()
+
+
+def test_startup_previews_first_image_and_remembers_successful_folder(qtbot, tmp_path):
+    from PySide6.QtCore import QSettings
+
+    folder = tmp_path / "test-images"
+    folder.mkdir()
+    Image.new("L", (100, 100), 90).save(folder / "first.png")
+    Image.new("L", (100, 100), 120).save(folder / "second.png")
+    preferences = QSettings(str(tmp_path / "preferences.ini"), QSettings.Format.IniFormat)
+    predictor = FakePredictor()
+    window = ViewerWindow()
+    qtbot.addWidget(window)
+    controller = ViewerController(
+        window,
+        InferenceSettings(tmp_path / "unused"),
+        lambda settings: AnalysisBackend(predictor, FakeExplainer(), "f" * 64, 0.01, "cpu"),
+        startup_folder=folder,
+        preferences=preferences,
+    )
+    window.show()
+    try:
+        qtbot.waitUntil(lambda: not controller.busy, timeout=10000)
+        assert controller.image.getpixel((0, 0)) == 90
+        assert "Image 1 of 2" in window.image_position_label.text()
+        assert predictor.calls == 0
+        saved = QSettings(str(tmp_path / "preferences.ini"), QSettings.Format.IniFormat)
+        assert saved.value("browse/folder") == str(folder.resolve())
+        controller.next_image()
+        qtbot.waitUntil(lambda: not controller.busy)
+        controller.reload_model()
+        qtbot.waitUntil(lambda: not controller.busy)
+        assert controller.image.getpixel((0, 0)) == 120
+        assert "Image 2 of 2" in window.image_position_label.text()
+        assert predictor.calls == 0
+    finally:
+        window.close()
+        qtbot.waitUntil(lambda: not controller.worker_thread.isRunning(), timeout=10000)
+
+
+def test_close_during_folder_scan_finishes_worker(viewer, qtbot, tmp_path, monkeypatch):
+    from src.viewer.browsing import scan_folder
+
+    window, controller, *_ = viewer
+    folder = tmp_path / "test-images"
+    make_browser_images(folder)
+    started, release = threading.Event(), threading.Event()
+
+    def paused_scan(path):
+        started.set()
+        release.wait(5)
+        return scan_folder(path)
+
+    monkeypatch.setattr("src.viewer.worker.scan_folder", paused_scan)
+    controller.open_folder(str(folder))
+    qtbot.waitUntil(started.is_set)
+    window.close()
+    release.set()
+    try:
+        qtbot.waitUntil(lambda: not controller.worker_thread.isRunning(), timeout=1500)
+    finally:
+        release.set()
+        controller.worker_thread.quit()
+        controller.worker_thread.wait(10000)
+
+
+@pytest.mark.parametrize("manual_file", [False, True])
+def test_model_recovery_keeps_explicit_selection_instead_of_pending_startup(
+    qtbot, tmp_path, manual_file
+):
+    startup = tmp_path / "startup"
+    chosen = tmp_path / "chosen"
+    startup.mkdir()
+    chosen.mkdir()
+    Image.new("L", (100, 100), 20).save(startup / "first.png")
+    Image.new("L", (100, 100), 90).save(chosen / "selected.png")
+    attempts = []
+
+    def factory(settings):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise ModelLoadError("Checkpoint missing")
+        return AnalysisBackend(FakePredictor(), FakeExplainer(), "f" * 64, 0.01, "cpu")
+
+    window = ViewerWindow()
+    qtbot.addWidget(window)
+    controller = ViewerController(
+        window, InferenceSettings(tmp_path / "unused"), factory, startup_folder=startup
+    )
+    window.show()
+    try:
+        qtbot.waitUntil(lambda: not controller.busy)
+        assert not controller.model_ready
+        if manual_file:
+            controller.open_image(str(chosen / "selected.png"))
+        else:
+            controller.open_folder(str(chosen))
+        qtbot.waitUntil(lambda: not controller.busy)
+        assert controller.image.getpixel((0, 0)) == 90
+        controller.reload_model()
+        qtbot.waitUntil(lambda: not controller.busy)
+        assert controller.model_ready
+        assert controller.image.getpixel((0, 0)) == 90
+        assert "selected.png" in window.image_position_label.text()
+    finally:
+        window.close()
+        qtbot.waitUntil(lambda: not controller.worker_thread.isRunning(), timeout=10000)

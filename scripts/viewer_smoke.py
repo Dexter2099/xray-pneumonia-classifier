@@ -31,7 +31,9 @@ def main() -> int:
         if font.is_file():
             QFontDatabase.addApplicationFont(str(font))
     window = ViewerWindow()
-    controller = ViewerController(window, load_settings())
+    controller = ViewerController(
+        window, load_settings(), startup_folder=ROOT / "data/raw/chest_xray/test"
+    )
     results = []
     controller.worker.completed.connect(results.append)
     window.show()
@@ -49,6 +51,18 @@ def main() -> int:
             raise RuntimeError(window.message_label.text())
         if not window.hood_dock.isHidden():
             raise RuntimeError("Diagnostics must be optional and hidden initially")
+        if controller.image is None or "Image 1 of 624" not in window.image_position_label.text():
+            raise RuntimeError("Startup did not preview the first local test image")
+        if controller.worker.predictions != 0 or window._overlay is not None:
+            raise RuntimeError("Startup unexpectedly ran a prediction")
+        window.grab().save(str(args.output / "startup-browser.png"))
+        controller.next_image()
+        wait(lambda: not controller.busy)
+        if "Image 2 of 624" not in window.image_position_label.text():
+            raise RuntimeError("Next image did not advance through the test folder")
+        if controller.worker.predictions != 0 or controller.worker.model_loads != 1:
+            raise RuntimeError("Next image predicted or reloaded the model")
+        window.grab().save(str(args.output / "next-image-browser.png"))
         window.resize(1360, 940)
         sample = ROOT / "demo-assets/sample-xrays/pneumonia-high-confidence.jpeg"
         controller.open_image(str(sample))
@@ -126,6 +140,9 @@ def main() -> int:
             "verification_cases_displayed": window.hood.verification_table.rowCount(),
             "diagnostics_preserve_predictions": True,
             "normal_large_text_preserve_predictions": True,
+            "startup_test_folder_preview": True,
+            "next_image_preview_only": True,
+            "test_folder_images": 624,
         }
         (args.output / "smoke.json").write_text(json.dumps(report, indent=2) + "\n")
         print(json.dumps(report))

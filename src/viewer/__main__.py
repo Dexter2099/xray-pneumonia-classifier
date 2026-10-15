@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import torch
+from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QApplication
 
 from src.errors import XrayError
@@ -31,7 +32,14 @@ def main() -> int:
     torch.set_num_threads(args.threads)
     app = QApplication(sys.argv[:1])
     window = ViewerWindow()
-    controller = ViewerController(window, settings)
+    preferences_path = ROOT / "outputs/viewer-preferences.ini"
+    preferences_path.parent.mkdir(parents=True, exist_ok=True)
+    preferences = QSettings(str(preferences_path), QSettings.Format.IniFormat)
+    default_folder = ROOT / "data/raw/chest_xray/test"
+    startup_folder = Path(str(preferences.value("browse/folder", str(default_folder))))
+    controller = ViewerController(
+        window, settings, startup_folder=startup_folder, preferences=preferences
+    )
     window.show()
     exit_code = app.exec()
     controller.worker_thread.wait()

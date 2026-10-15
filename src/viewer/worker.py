@@ -15,6 +15,7 @@ from src.gradcam import Explainer, GradCamExplainer
 from src.inference import PredictionService, Predictor
 from src.inputs import load_image
 from src.settings import InferenceSettings
+from src.viewer.browsing import scan_folder
 from src.viewer.diagnostics import TimelineEvent, inspect_input
 from src.viewer.evidence import VerificationEvidence, load_verification
 from src.viewer.messages import AnalysisResult as AnalysisResult
@@ -46,6 +47,7 @@ def create_backend(settings: InferenceSettings) -> AnalysisBackend:
 class AnalysisWorker(QObject):
     ready = Signal(object)
     image_loaded = Signal(int, object)
+    folder_loaded = Signal(int, object)
     completed = Signal(object)
     failed = Signal(int, str)
     stage = Signal(int, str)
@@ -140,6 +142,20 @@ class AnalysisWorker(QObject):
             self.failed.emit(
                 0, "Unexpected model error. Check the configuration and reload the model."
             )
+
+    @Slot(int, str)
+    def open_folder(self, request_id: int, path: str) -> None:
+        try:
+            with self.measured(
+                request_id, "Folder scan", "scan_folder: index PNG/JPEG paths; no prediction"
+            ):
+                folder = scan_folder(path)
+            self.folder_loaded.emit(request_id, folder)
+        except XrayError as exc:
+            self.failed.emit(request_id, str(exc))
+        except Exception:
+            LOGGER.exception("Unexpected image folder failure")
+            self.failed.emit(request_id, "Cannot open the image folder. Choose another folder.")
 
     @Slot(int, str)
     def open_image(self, request_id: int, path: str) -> None:

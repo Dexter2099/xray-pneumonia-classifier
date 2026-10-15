@@ -13,6 +13,7 @@ The existing CNN and its checkpoint remain the scientific baseline. Engineering 
 | `PredictionService` | Load a trusted state dictionary once, own its device and return typed predictions. |
 | `GradCamExplainer` | Generate an explanation with the existing model and release hooks/graphs. |
 | `AnalysisWorker` | Own a backend in one Qt worker thread and serialize expensive operations. |
+| `ImageFolder` / `scan_folder` | Index PNG/JPEG paths recursively in the worker; transfer an immutable ordered sequence without decoding images or predicting. |
 | `ViewerController` | Manage busy/ready/error state and associate results with requests. |
 | `ViewerWindow` | Render pixels and text and emit user actions; it imports no model code. |
 | `ModelReady` / `AnalysisResult` | Carry readiness metadata and completed results to the GUI; the backend stays in the worker. |
@@ -47,6 +48,8 @@ Expected failures use application exceptions. The GUI displays actionable messag
 A new image clears the previous prediction and overlay before decoding. Corrupt files leave no stale input/results. Request identifiers reject stale callbacks. Conflicting actions are disabled and checked again by the controller. If Grad-CAM fails, the completed prediction remains visible. Closing during work waits for that operation before the worker thread exits; it never forcibly terminates a PyTorch operation.
 
 The controller makes state decisions; window methods own label formatting and action-widget updates. The worker emits a frozen `ModelReady` snapshot instead of exposing its backend or requiring the GUI to read mutable counters. Prediction's recoverable error boundary includes preprocessing allocation, tensor stacking and device transfer as well as the forward pass.
+
+Folder browsing follows the same ownership boundary. The worker scans filenames; the controller owns the selected folder, sequence and position, and sends each selected image through the existing decode/inspection path. Startup loads only a preview after model readiness. Next never requests prediction. New selections clear stale results, and corrupt files retain their sequence position so Next can recover. Closing during a folder scan finishes that operation before quitting the worker. The desktop entry point stores the chosen folder in an ignored per-project INI file; tests can inject temporary preferences and startup folders.
 
 ## Training and entry-point contracts
 

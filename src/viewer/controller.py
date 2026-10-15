@@ -4,10 +4,11 @@ from collections.abc import Callable
 from pathlib import Path
 
 from PIL import Image
-from PySide6.QtCore import QObject, QThread, Signal, Slot
+from PySide6.QtCore import QObject, QSettings, QThread, Signal, Slot
 from PySide6.QtGui import QCloseEvent
 
 from src.settings import InferenceSettings
+from src.viewer.browsing import ImageFolder
 from src.viewer.diagnostics import InputInspection, TimelineEvent
 from src.viewer.evidence import VerificationEvidence
 from src.viewer.messages import AnalysisResult, ModelReady
@@ -18,6 +19,7 @@ from src.viewer.worker import AnalysisBackend, AnalysisWorker, create_backend
 class ViewerController(QObject):
     initialize_requested = Signal()
     image_requested = Signal(int, str)
+    folder_requested = Signal(int, str)
     analysis_requested = Signal(int, object)
     verification_requested = Signal(int)
 
@@ -26,6 +28,9 @@ class ViewerController(QObject):
         window: ViewerWindow,
         settings: InferenceSettings,
         factory: Callable[[InferenceSettings], AnalysisBackend] = create_backend,
+        *,
+        startup_folder: Path | None = None,
+        preferences: QSettings | None = None,
     ) -> None:
         super().__init__(window)
         self.window = window
@@ -34,16 +39,23 @@ class ViewerController(QObject):
         self.busy = True
         self.model_ready = False
         self.closing = False
+        self.startup_folder = startup_folder
+        self.preferences = preferences
+        self.folder: Path | None = None
+        self.image_paths: tuple[Path, ...] = ()
+        self.image_index = -1
         self.worker_thread = QThread(self)
         self.worker_thread.setObjectName("xray-analysis-worker")
         self.worker = AnalysisWorker(settings, factory)
         self.worker.moveToThread(self.worker_thread)
         self.initialize_requested.connect(self.worker.initialize)
         self.image_requested.connect(self.worker.open_image)
+        self.folder_requested.connect(self.worker.open_folder)
         self.analysis_requested.connect(self.worker.analyze)
         self.verification_requested.connect(self.worker.read_verification)
         self.worker.ready.connect(self._ready)
         self.worker.image_loaded.connect(self._image_loaded)
+        self.worker.folder_loaded.connect(self._folder_loaded)
         self.worker.completed.connect(self._completed)
         self.worker.failed.connect(self._failed)
         self.worker.stage.connect(self._stage)
@@ -53,6 +65,8 @@ class ViewerController(QObject):
         self.worker_thread.finished.connect(self.worker.deleteLater)
         self.worker_thread.finished.connect(self.window.close)
         window.open_requested.connect(self.open_image)
+        window.folder_requested.connect(self.open_folder)
+        window.next_requested.connect(self.next_image)
         window.predict_requested.connect(self.predict)
         window.retry_requested.connect(self.reload_model)
         window.closing.connect(self.close)
@@ -77,18 +91,71 @@ class ViewerController(QObject):
         self.model_ready = True
         self.window.show_model_ready(ready)
         self._set_busy(False, "Ready - open an image")
+        if self.startup_folder is not None:
+            folder, self.startup_folder = self.startup_folder, None
+            self.open_folder(str(folder))
+
+    def _clear_input(self) -> None:
+        self.image = None
+        self.window.set_preview(None)
+        self.window.hood.set_inspection(None)
+        self.window.clear_result()
+
+    def _show_browser(self, single_image: Path | None = None) -> None:
+        current = self.image_paths[self.image_index] if self.image_index >= 0 else single_image
+        self.window.show_browser(self.folder, current, self.image_index + 1, len(self.image_paths))
+
+    @Slot(str)
+    def open_folder(self, path: str) -> None:
+        if self.busy or self.closing:
+            return
+        self.startup_folder = None
+        self.request_id += 1
+        self.folder = Path(path)
+        self.image_paths = ()
+        self.image_index = -1
+        self._clear_input()
+        self._show_browser()
+        self._set_busy(True, "Finding images in folder...")
+        self.folder_requested.emit(self.request_id, path)
+
+    @Slot(int, object)
+    def _folder_loaded(self, request_id: int, folder: ImageFolder) -> None:
+        if request_id != self.request_id:
+            return
+        if self.closing:
+            self._set_busy(False, "Folder scan finished")
+            return
+        self.folder, self.image_paths = folder.folder, folder.images
+        self.image_index = 0
+        if self.preferences is not None:
+            self.preferences.setValue("browse/folder", str(folder.folder))
+            self.preferences.sync()
+        self._set_busy(False, "Folder loaded")
+        self.open_image(str(self.image_paths[0]))
+
+    @Slot()
+    def next_image(self) -> None:
+        if self.busy or self.closing or self.image_index + 1 >= len(self.image_paths):
+            return
+        self.open_image(str(self.image_paths[self.image_index + 1]))
 
     @Slot(str)
     def open_image(self, path: str) -> None:
         if self.busy or self.closing:
             return
+        self.startup_folder = None
         self.request_id += 1
+        selected = Path(path).resolve()
+        if selected in self.image_paths:
+            self.image_index = self.image_paths.index(selected)
+        else:
+            # A manually opened file outside the sequence must not show its old counter.
+            self.folder, self.image_paths, self.image_index = None, (), -1
         # Invalidate old pixels/results before decoding: a failed open must never leave
         # the previous image's result displayed beside the new filename.
-        self.image = None
-        self.window.set_preview(None)
-        self.window.hood.set_inspection(None)
-        self.window.clear_result()
+        self._clear_input()
+        self._show_browser(selected)
         self._set_busy(True, f"Opening {Path(path).name}...")
         self.image_requested.emit(self.request_id, path)
 
